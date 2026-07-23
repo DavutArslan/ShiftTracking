@@ -115,7 +115,6 @@
   </div>
   <div class="grow"></div>
   <button class="btn ghost sm" id="reqBtn">⚙ İhtiyaç</button>
-  <button class="btn ghost sm" id="quotaBtn">📋 Kotalar</button>
   <button class="btn go" id="autoBtn">🎯 Otomatik Oluştur</button>
   <button class="btn ghost sm" id="prevBtn">‹</button>
   <button class="btn ghost sm" id="todayBtn">Bugün</button>
@@ -266,16 +265,17 @@
   </div>
 </div>
 
-<!-- Kota modalı -->
+<!-- Kişi kotası modalı -->
 <div class="modal-bg" id="quotaBg">
-  <div class="modal wide">
-    <h3>📋 Kıdem Bazlı Aylık Kotalar</h3>
-    <div class="hint">Her grup için <b>kişi başına aylık</b> hedef: alanlarda kaç nöbet ve saat türlerinde kaç kez. Boş = serbest (kısıt yok). Hedeflenir; takvimi doldurmak için gerekmedikçe aşılmaz, aşılırsa uyarı verilir. Örn. Orta kıdem asistan → Sarı: 4, Kırmızı: 1, 16s: 1.</div>
-    <div style="overflow:auto;max-height:60vh;margin-top:8px">
-      <table class="gtable" id="quotaTable"></table>
-    </div>
-    <div style="text-align:right;margin-top:14px">
-      <button class="btn ghost" id="quotaClear">Tümünü temizle</button>
+  <div class="modal">
+    <h3 id="quotaTitle">Aylık Kota</h3>
+    <div class="hint">Bu kişinin <b>aylık</b> hedefleri: hangi alanda kaç nöbet, hangi saat türünde kaç kez. Boş = serbest (kısıt yok). Hedeflenir; takvimi doldurmak için gerekmedikçe aşılmaz, aşılırsa uyarı verilir. Örn. Sarı: 4, Kırmızı: 1, 16s: 1.</div>
+    <h4 style="margin:12px 0 4px;font-size:13px;color:var(--muted)">Alan kotaları (aylık nöbet sayısı)</h4>
+    <div id="quotaAreas" class="checkbox-row" style="gap:10px"></div>
+    <h4 style="margin:14px 0 4px;font-size:13px;color:var(--muted)">Saat türü kotaları (aylık kez)</h4>
+    <div id="quotaShifts" class="checkbox-row" style="gap:10px"></div>
+    <div style="text-align:right;margin-top:16px">
+      <button class="btn ghost" id="quotaClear">Temizle</button>
       <button class="btn" id="quotaSave">Kaydet</button>
     </div>
   </div>
@@ -318,9 +318,8 @@ function load(){
   if(!d.reqs) d.reqs=defaultReqs();
   if(!d.reqs.maxSameSen) d.reqs.maxSameSen={sari:2};
   ['weekday','weekend'].forEach(k=>{ if(!d.reqs[k].yatis) d.reqs[k].yatis={count:2,shift:'24'}; });
-  if(!d.quotas) d.quotas={};
   if(!d.org) d.org={hospital:'',birim:''};
-  d.staff.forEach(s=>{ if(!s.exceptions) s.exceptions={}; });
+  d.staff.forEach(s=>{ if(!s.exceptions) s.exceptions={}; if(!s.quota) s.quota={areas:{},shifts:{}}; });
   return d;
 }
 function save(){ localStorage.setItem('shiftDB',JSON.stringify(db)); }
@@ -343,14 +342,15 @@ function groupId(s){ return s.role==='asistan' ? 'asistan_'+s.seniority : s.role
 function senKey(s){ return s.role==='asistan' ? s.seniority : s.role; }
 
 /* ============ PERSONEL ============ */
+const ALL_AREAS=['sari','kirmizi','travma','yesil','ortaci','yatis','yogun','mesai'];
 function areaOptionsFor(role,sen){ return role==='asistan'?(SENIORITY_AREAS[sen]||[]):(ROLE_AREAS[role]||[]); }
 function renderAreaChecks(preselect){
   const role=document.getElementById('sRole').value;
-  const sen=document.getElementById('sSeniority').value;
   document.getElementById('seniorityWrap').style.display=role==='asistan'?'':'none';
-  const areas=areaOptionsFor(role,sen);
-  const sel=preselect||areas;
-  document.getElementById('areaChecks').innerHTML=areas.map(a=>
+  // tüm alanlar görünür; role uygun olanlar varsayılan işaretli (düzenlemede kişinin alanları)
+  const sen=document.getElementById('sSeniority').value;
+  const sel=preselect||areaOptionsFor(role,sen);
+  document.getElementById('areaChecks').innerHTML=ALL_AREAS.map(a=>
     `<label><input type="checkbox" class="areaChk" value="${a}" ${sel.includes(a)?'checked':''}>${AREAS[a]}</label>`).join('');
 }
 function addStaff(){
@@ -364,7 +364,7 @@ function addStaff(){
     if(s){ s.name=name; s.role=role; s.seniority=sen; s.areas=areas; }
     endEdit();
   }else{
-    db.staff.push({id:uid(),name,role,seniority:sen,areas,exceptions:{}});
+    db.staff.push({id:uid(),name,role,seniority:sen,areas,exceptions:{},quota:{areas:{},shifts:{}}});
   }
   document.getElementById('sName').value='';
   save(); renderStaff(); render();
@@ -412,11 +412,13 @@ function renderStaff(){
         <div style="font-weight:600">${s.name}</div>
         <div style="display:flex;gap:4px">
           <button class="btn ghost sm" title="Düzenle" onclick="editStaff('${s.id}')">✎</button>
+          <button class="btn ghost sm" title="Aylık kota" onclick="openQuota('${s.id}')">🎯</button>
           <button class="btn ghost sm" title="İstisna günleri" onclick="openExc('${s.id}')">📅</button>
           <button class="btn danger sm" onclick="delStaff('${s.id}')">✕</button>
         </div>
       </div>
       <div class="meta">${roleLabel(s)} · ${s.areas.map(a=>AREAS[a]).join(', ')||'-'}</div>
+      ${quotaSummary(s)?`<div class="exc" style="color:var(--accent)">${quotaSummary(s)}</div>`:''}
       ${excSummary(s)?`<div class="exc">${excSummary(s)}</div>`:''}
     </div>`).join('');
 }
@@ -449,10 +451,8 @@ function parseAreas(str,role,sen){
   const map={'sarı':'sari','sari':'sari','kırmızı':'kirmizi','kirmizi':'kirmizi','travma':'travma','yeşil':'yesil','yesil':'yesil','ortacı':'ortaci','ortaci':'ortaci','yatış':'yatis','yatis':'yatis','yoğun':'yogun','yogun':'yogun'};
   let out=[];
   Object.keys(map).forEach(k=>{ if(t.includes(k)&&!out.includes(map[k])) out.push(map[k]); });
-  // sadece kişinin yetkili olabileceği alanlar
-  const allowed=areaOptionsFor(role,sen);
-  out=out.filter(a=>allowed.includes(a));
-  return out.length?out:allowed;
+  // alanlar serbest; boşsa role uygun varsayılanlar
+  return out.length?out:areaOptionsFor(role,sen);
 }
 function importExcel(file){
   const rdr=new FileReader();
@@ -470,7 +470,13 @@ function importExcel(file){
         const role=parseRole(r[1]);
         const sen=role==='asistan'?(parseSen(r[2])||'orta'):null;
         const areas=parseAreas(r[3],role,sen);
-        db.staff.push({id:uid(),name,role,seniority:sen,areas,exceptions:{}});
+        // Kota sütunları: 4..10 = alan kotaları, 11..13 = saat kotaları
+        const qAreas={}, qShifts={};
+        ['sari','kirmizi','travma','yesil','ortaci','yatis','yogun'].forEach((a,k)=>{
+          const v=r[4+k]; if(v!=='' && v!=null && !isNaN(v)) qAreas[a]=+v; });
+        ['24','16','8'].forEach((sh,k)=>{
+          const v=r[11+k]; if(v!=='' && v!=null && !isNaN(v)) qShifts[sh]=+v; });
+        db.staff.push({id:uid(),name,role,seniority:sen,areas,exceptions:{},quota:{areas:qAreas,shifts:qShifts}});
         added++;
       });
       save(); renderStaff(); render();
@@ -480,17 +486,18 @@ function importExcel(file){
   rdr.readAsArrayBuffer(file);
 }
 function downloadTemplate(){
+  // Kota sütunları boş = serbest. Alan kotaları = kişinin aylık o alandaki nöbet sayısı; saat kotaları = aylık o saat türünden kaç kez.
   const rows=[
-    ['Ad Soyad','Rol','Kıdem','Alanlar (virgülle, boş bırakılırsa otomatik)'],
-    ['Dr. Ahmet Yılmaz','Asistan','Üst','Sarı, Kırmızı, Travma, Ortacı'],
-    ['Dr. Ayşe Demir','Asistan','Orta','Sarı, Kırmızı, Travma, Ortacı'],
-    ['Dr. Mehmet Kaya','Asistan','Alt','Sarı, Travma, Yeşil, Yoğun bakım'],
-    ['Dr. Zeynep Ak','Pratisyen','','Yeşil, Sarı, Yatış takibi'],
-    ['Dr. Ali Vural','Uzman','','Sarı, Kırmızı, Travma, Yeşil'],
-    ['Prof. Dr. Can Öz','Öğretim üyesi','','Sarı, Kırmızı, Travma']
+    ['Ad Soyad','Rol','Kıdem','Alanlar (virgülle, boş=otomatik)','Kota Sarı','Kota Kırmızı','Kota Travma','Kota Yeşil','Kota Ortacı','Kota Yatış','Kota Yoğun','Kota 24s','Kota 16s','Kota 8s'],
+    ['Dr. Ahmet Yılmaz','Asistan','Üst','Sarı, Kırmızı, Travma, Ortacı',4,2,2,'',3,'','','','',''],
+    ['Dr. Ayşe Demir','Asistan','Orta','Sarı, Kırmızı, Travma, Ortacı',4,1,2,'',2,'','','',1,''],
+    ['Dr. Mehmet Kaya','Asistan','Alt','Sarı, Travma, Yeşil, Yoğun bakım',5,'',2,3,'','',2,'','',''],
+    ['Dr. Zeynep Ak','Pratisyen','','Yeşil, Sarı, Yatış takibi',3,'','',4,'',6,'','','',''],
+    ['Dr. Ali Vural','Uzman','','Sarı, Kırmızı, Travma, Yeşil','','','',3,'','','','','',''],
+    ['Prof. Dr. Can Öz','Öğretim üyesi','','Sarı, Kırmızı, Travma','','','','','','','','','','']
   ];
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:22},{wch:16},{wch:10},{wch:42}];
+  ws['!cols']=[{wch:22},{wch:16},{wch:10},{wch:38}].concat(Array(10).fill({wch:9}));
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Personel');
   XLSX.writeFile(wb,'personel_sablon.xlsx');
 }
@@ -556,39 +563,44 @@ document.getElementById('reqBtn').onclick=openReq;
 document.getElementById('reqSave').onclick=saveReq;
 document.getElementById('reqReset').onclick=()=>{ db.reqs=defaultReqs(); save(); openReq(); };
 
-/* ============ KOTA PANELİ ============ */
+/* ============ KİŞİ KOTASI ============ */
 const QUOTA_AREAS=['sari','kirmizi','travma','yesil','ortaci','yatis','yogun'];
 const QUOTA_SHIFTS=['24','16','8'];
-function openQuota(){
-  let head='<tr><th style="text-align:left">Grup</th>';
-  QUOTA_AREAS.forEach(a=>head+=`<th><span class="pill" style="background:var(--${a});color:#0b1220">${AREAS[a]}</span></th>`);
-  head+='<th class="sep">24s</th>'+QUOTA_SHIFTS.slice(1).map(s=>`<th>${s}s</th>`).join('')+'</tr>';
-  let body='';
-  GROUPS.forEach(g=>{
-    const q=db.quotas[g.id]||{areas:{},shifts:{}};
-    body+=`<tr><td style="text-align:left;font-weight:600">${g.label}</td>`;
-    QUOTA_AREAS.forEach(a=>{ const v=q.areas&&q.areas[a]!=null?q.areas[a]:'';
-      body+=`<td><input type="number" min="0" id="q_${g.id}_a_${a}" value="${v}" placeholder="—"></td>`; });
-    QUOTA_SHIFTS.forEach((sh,i)=>{ const v=q.shifts&&q.shifts[sh]!=null?q.shifts[sh]:'';
-      body+=`<td class="${i===0?'sep':''}"><input type="number" min="0" id="q_${g.id}_s_${sh}" value="${v}" placeholder="—"></td>`; });
-    body+='</tr>';
-  });
-  document.getElementById('quotaTable').innerHTML=head+body;
+let quotaStaffId=null;
+function quotaSummary(s){
+  const q=s.quota||{areas:{},shifts:{}}; const parts=[];
+  QUOTA_AREAS.forEach(a=>{ if(q.areas&&q.areas[a]!=null) parts.push(`${AREAS[a]}:${q.areas[a]}`); });
+  QUOTA_SHIFTS.forEach(sh=>{ if(q.shifts&&q.shifts[sh]!=null) parts.push(`${sh}s:${q.shifts[sh]}`); });
+  return parts.length?('🎯 '+parts.join(' · ')):'';
+}
+function openQuota(id){
+  quotaStaffId=id; const s=db.staff.find(x=>x.id===id); if(!s) return;
+  if(!s.quota) s.quota={areas:{},shifts:{}};
+  document.getElementById('quotaTitle').textContent='Aylık Kota — '+s.name;
+  document.getElementById('quotaAreas').innerHTML=QUOTA_AREAS.map(a=>{
+    const v=s.quota.areas&&s.quota.areas[a]!=null?s.quota.areas[a]:'';
+    return `<label style="flex-direction:column;align-items:flex-start;gap:2px">
+      <span class="pill" style="background:var(--${a});color:#0b1220">${AREAS[a]}</span>
+      <input type="number" min="0" id="qa_${a}" value="${v}" placeholder="—" style="width:70px">
+    </label>`; }).join('');
+  document.getElementById('quotaShifts').innerHTML=QUOTA_SHIFTS.map(sh=>{
+    const v=s.quota.shifts&&s.quota.shifts[sh]!=null?s.quota.shifts[sh]:'';
+    return `<label style="flex-direction:column;align-items:flex-start;gap:2px">
+      <span>${SHIFTS[sh]}</span>
+      <input type="number" min="0" id="qs_${sh}" value="${v}" placeholder="—" style="width:70px">
+    </label>`; }).join('');
   document.getElementById('quotaBg').classList.add('show');
 }
 function saveQuota(){
-  const q={};
-  GROUPS.forEach(g=>{
-    const areas={},shifts={};
-    QUOTA_AREAS.forEach(a=>{ const v=document.getElementById(`q_${g.id}_a_${a}`).value; if(v!=='') areas[a]=+v; });
-    QUOTA_SHIFTS.forEach(sh=>{ const v=document.getElementById(`q_${g.id}_s_${sh}`).value; if(v!=='') shifts[sh]=+v; });
-    if(Object.keys(areas).length||Object.keys(shifts).length) q[g.id]={areas,shifts};
-  });
-  db.quotas=q; save(); document.getElementById('quotaBg').classList.remove('show');
+  const s=db.staff.find(x=>x.id===quotaStaffId); if(!s) return;
+  const areas={},shifts={};
+  QUOTA_AREAS.forEach(a=>{ const v=document.getElementById('qa_'+a).value; if(v!=='') areas[a]=+v; });
+  QUOTA_SHIFTS.forEach(sh=>{ const v=document.getElementById('qs_'+sh).value; if(v!=='') shifts[sh]=+v; });
+  s.quota={areas,shifts};
+  save(); renderStaff(); document.getElementById('quotaBg').classList.remove('show');
 }
-document.getElementById('quotaBtn').onclick=openQuota;
 document.getElementById('quotaSave').onclick=saveQuota;
-document.getElementById('quotaClear').onclick=()=>{ if(confirm('Tüm kotalar silinsin mi?')){ db.quotas={}; save(); openQuota(); } };
+document.getElementById('quotaClear').onclick=()=>{ const s=db.staff.find(x=>x.id===quotaStaffId); if(s){ s.quota={areas:{},shifts:{}}; save(); openQuota(quotaStaffId); renderStaff(); } };
 
 /* ============ ATAMA & İZİN ============ */
 function dayAssigns(d){ return db.assign[d]||[]; }
@@ -626,10 +638,6 @@ function dayWarnings(dISO){
   list.forEach(a=>{ if(isIzin(a.staffId,dISO)) w.push(`${staffById(a.staffId)?.name}: izinli ama görev atanmış`); });
   const ortaci=list.filter(a=>a.area==='ortaci');
   if(ortaci.length>1) w.push(`Ortacı tek kişi olmalı (${ortaci.length} atanmış)`);
-  ortaci.forEach(a=>{ const s=staffById(a.staffId);
-    if(s&&!(s.role==='asistan'&&(s.seniority==='ust'||s.seniority==='orta'))) w.push(`${s.name}: ortacı olamaz`); });
-  list.filter(a=>a.area==='yatis').forEach(a=>{ const s=staffById(a.staffId);
-    if(s&&s.role!=='pratisyen') w.push(`${s.name}: yatış takibini pratisyen yapar`); });
   if(db.staff.length && !list.some(a=>a.area==='travma')) w.push('Travma ataması yok (zorunlu)');
   list.forEach(a=>{ const s=staffById(a.staffId);
     if(s&&!s.areas.includes(a.area)) w.push(`${s.name}: ${AREAS[a.area]} yetkisi yok`); });
@@ -661,9 +669,7 @@ function autoGenerate(){
   for(let dn=1;dn<=daysIn;dn++){ const d=new Date(y,m,dn); (db.assign[iso(d)]||[]).forEach(a=>bump(a,d)); }
   const gaps=[], overQuota={}, balanceFail={};
   function canAssign(s,d,dISO,area,shift){
-    if(!s.areas.includes(area)) return false;
-    if(area==='ortaci'&&!(s.role==='asistan'&&(s.seniority==='ust'||s.seniority==='orta'))) return false;
-    if(area==='yatis'&&s.role!=='pratisyen') return false;
+    if(!s.areas.includes(area)) return false; // yetki = kişiye tanımlı alanlar (rol kısıtı yok)
     if(s.exceptions&&s.exceptions[dISO]==='hard') return false;
     if(isIzin(s.id,dISO)) return false;
     if((db.assign[dISO]||[]).some(a=>a.staffId===s.id)) return false;
@@ -673,7 +679,7 @@ function autoGenerate(){
     if(st>3) return false;
     return true;
   }
-  function tgt(s,key,type){ const q=db.quotas[groupId(s)]; if(!q)return null; const map=type==='a'?q.areas:q.shifts; return (map&&map[key]!=null)?map[key]:null; }
+  function tgt(s,key,type){ const q=s.quota; if(!q)return null; const map=type==='a'?q.areas:q.shifts; return (map&&map[key]!=null)?map[key]:null; }
   function score(s,dISO,shift,area){
     let sc=tot[s.id]*10 + wknd[s.id]*3 + ((shift==='24'||shift==='16')?night[s.id]*3:0);
     const ta=tgt(s,area,'a'); if(ta!=null){ const c=aCnt[s.id][area]||0; sc += c>=ta ? 100000+(c-ta)*100 : -(ta-c)*40; }
