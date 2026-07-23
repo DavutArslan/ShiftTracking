@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acil Servis Nöbet Planlama</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --line:#334155;
+    --txt:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --accent2:#0ea5e9;
+    --ok:#22c55e; --warn:#f59e0b; --err:#ef4444;
+    --sari:#eab308; --kirmizi:#ef4444; --travma:#a855f7; --yesil:#22c55e;
+    --ortaci:#f97316; --yogun:#06b6d4; --yatis:#ec4899; --mesai:#64748b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    background:var(--bg);color:var(--txt);font-size:14px}
+  header{background:var(--panel);padding:12px 18px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;position:sticky;top:0;z-index:20}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  header .grow{flex:1}
+  .tabs{display:flex;gap:4px}
+  .tab{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px}
+  .tab.active{background:var(--accent2);color:#fff;border-color:var(--accent2)}
+  button{cursor:pointer;font-family:inherit}
+  .btn{background:var(--accent2);color:#fff;border:none;padding:7px 12px;border-radius:8px;font-size:13px}
+  .btn.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--txt)}
+  .btn.sm{padding:4px 8px;font-size:12px}
+  .btn.danger{background:var(--err)}
+  .btn.go{background:linear-gradient(135deg,#22c55e,#0ea5e9);font-weight:600}
+  .btn:hover{filter:brightness(1.1)}
+  .layout{display:flex;min-height:calc(100vh - 54px)}
+  .side{width:320px;background:var(--panel);border-right:1px solid var(--line);
+    padding:14px;overflow-y:auto;max-height:calc(100vh - 54px)}
+  .main{flex:1;padding:16px;overflow:auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .card h3{margin:0 0 10px;font-size:14px;color:var(--accent)}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px}
+  input,select{width:100%;background:var(--panel2);border:1px solid var(--line);
+    color:var(--txt);padding:7px 9px;border-radius:7px;font-size:13px}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1}
+  .pill{display:inline-block;padding:2px 7px;border-radius:20px;font-size:11px;font-weight:600}
+  .staff-item{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px}
+  .staff-item .top{display:flex;justify-content:space-between;align-items:center;gap:6px}
+  .staff-item .meta{font-size:11px;color:var(--muted);margin-top:2px}
+  .staff-item .exc{font-size:10px;color:var(--warn);margin-top:3px}
+  .cal-head{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+  .cal-head h2{margin:0;font-size:16px}
+  .grid-month{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .dow{text-align:center;color:var(--muted);font-size:12px;font-weight:600;padding:4px}
+  .day{background:var(--panel);border:1px solid var(--line);border-radius:8px;min-height:104px;
+    padding:6px;cursor:pointer;position:relative;transition:.1s}
+  .day:hover{border-color:var(--accent)}
+  .day.other{opacity:.35}
+  .day.weekend{background:#1a2436}
+  .day.today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .day .num{font-size:12px;font-weight:600;color:var(--muted)}
+  .day.izin-day{background:#2a1e1e}
+  .assign{font-size:10px;padding:1px 4px;border-radius:4px;margin-top:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#0b1220;font-weight:600}
+  .warn-badge{position:absolute;top:4px;right:4px;background:var(--err);color:#fff;
+    border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:10px}
+  .legend span{display:flex;align-items:center;gap:4px}
+  .dot{width:10px;height:10px;border-radius:3px;display:inline-block}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;
+    align-items:center;justify-content:center;z-index:50;padding:14px}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:18px;width:600px;max-width:100%;max-height:92vh;overflow:auto}
+  .modal.wide{width:860px}
+  .modal h3{margin:0 0 4px}
+  .assign-row{display:flex;gap:6px;align-items:center;background:var(--panel2);padding:6px;border-radius:8px;margin-bottom:6px}
+  .assign-row .lbl{flex:1;font-size:12px}
+  .warnbox{background:#2a1e1e;border:1px solid var(--err);border-radius:8px;padding:8px;font-size:12px;margin:8px 0;color:#fca5a5}
+  .warnbox.ok{background:#14261a;border-color:var(--ok);color:#86efac}
+  table.week{width:100%;border-collapse:collapse}
+  table.week th,table.week td{border:1px solid var(--line);padding:6px;font-size:12px;vertical-align:top}
+  table.week th{background:var(--panel2)}
+  .day-detail .slot{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}
+  .empty{color:var(--muted);text-align:center;padding:20px;font-size:13px}
+  .checkbox-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+  .checkbox-row label{display:flex;align-items:center;gap:4px;background:var(--panel2);padding:4px 8px;border-radius:6px;font-size:11px;color:var(--txt);margin:0;cursor:pointer}
+  .checkbox-row input{width:auto}
+  .stat{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--line)}
+  .mini{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:8px}
+  .mini .md{text-align:center;font-size:10px;color:var(--muted)}
+  .mini .mc{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:12px;cursor:pointer;background:var(--panel2);border:1px solid var(--line)}
+  .mini .mc.hard{background:var(--err);color:#fff}
+  .mini .mc.soft{background:var(--warn);color:#0b1220}
+  .mini .mc.blank{background:transparent;border:none;cursor:default}
+  .gtable{width:100%;border-collapse:collapse}
+  .gtable td,.gtable th{padding:5px;font-size:12px;border-bottom:1px solid var(--line);text-align:center;white-space:nowrap}
+  .gtable th{background:var(--panel2);position:sticky;top:0}
+  .gtable input{width:52px;text-align:center;padding:4px}
+  .gtable input.narrow{width:46px}
+  .gtable select{padding:4px}
+  .hint{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5}
+  .sep{border-left:2px solid var(--accent)!important}
+  .editing{outline:2px solid var(--accent);border-radius:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🏥 Nöbet Planlama</h1>
+  <div class="tabs">
+    <div class="tab active" data-view="month">Aylık</div>
+    <div class="tab" data-view="week">Haftalık</div>
+    <div class="tab" data-view="day">Günlük</div>
+  </div>
+  <div class="grow"></div>
+  <button class="btn ghost sm" id="reqBtn">⚙ İhtiyaç</button>
+  <button class="btn ghost sm" id="quotaBtn">📋 Kotalar</button>
+  <button class="btn go" id="autoBtn">🎯 Otomatik Oluştur</button>
+  <button class="btn ghost sm" id="prevBtn">‹</button>
+  <button class="btn ghost sm" id="todayBtn">Bugün</button>
+  <button class="btn ghost sm" id="nextBtn">›</button>
+  <button class="btn ghost sm" id="exportBtn">⬇ CSV</button>
+</header>
+
+<div class="layout">
+  <aside class="side">
+    <div class="card" id="staffFormCard">
+      <h3 id="staffFormTitle">Personel Ekle</h3>
+      <label>Ad Soyad</label>
+      <input id="sName" placeholder="Dr. ...">
+      <div class="row">
+        <div>
+          <label>Rol</label>
+          <select id="sRole">
+            <option value="ogretim">Öğretim üyesi</option>
+            <option value="uzman">Uzman</option>
+            <option value="asistan" selected>Asistan</option>
+            <option value="pratisyen">Pratisyen</option>
+          </select>
+        </div>
+        <div id="seniorityWrap">
+          <label>Kıdem</label>
+          <select id="sSeniority">
+            <option value="ust">Üst kıdem</option>
+            <option value="orta">Orta kıdem</option>
+            <option value="alt">Alt kıdem</option>
+          </select>
+        </div>
+      </div>
+      <label>Yetkin alanlar</label>
+      <div class="checkbox-row" id="areaChecks"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="addStaffBtn"><span id="addStaffLabel">+ Ekle</span></button>
+        <button class="btn ghost" id="cancelEditBtn" style="display:none;flex:0 0 auto">Vazgeç</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn ghost sm" id="importBtn">📥 Excel içe aktar</button>
+        <button class="btn ghost sm" id="templateBtn">📄 Örnek Excel</button>
+      </div>
+      <input type="file" id="importFile" accept=".xlsx,.xls,.csv" style="display:none">
+    </div>
+
+    <div class="card">
+      <h3>Personel (<span id="staffCount">0</span>)</h3>
+      <div id="staffList"></div>
+    </div>
+
+    <div class="card">
+      <h3>Görev Dengesi (bu ay)</h3>
+      <div id="statsBox"><div class="empty">Henüz atama yok</div></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="cal-head"><h2 id="periodLabel"></h2></div>
+    <div id="viewArea"></div>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--sari)"></i>Sarı</span>
+      <span><i class="dot" style="background:var(--kirmizi)"></i>Kırmızı</span>
+      <span><i class="dot" style="background:var(--travma)"></i>Travma</span>
+      <span><i class="dot" style="background:var(--yesil)"></i>Yeşil</span>
+      <span><i class="dot" style="background:var(--ortaci)"></i>Ortacı</span>
+      <span><i class="dot" style="background:var(--yatis)"></i>Yatış</span>
+      <span><i class="dot" style="background:var(--yogun)"></i>Yoğun bakım</span>
+      <span><i class="dot" style="background:var(--mesai)"></i>Mesai</span>
+      <span><i class="dot" style="background:#2a1e1e;border:1px solid var(--err)"></i>İzin</span>
+    </div>
+  </main>
+</div>
+
+<!-- Gün modalı -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h3 id="modalTitle">Gün</h3>
+    <div id="modalWarn"></div>
+    <div style="display:flex;gap:8px;margin:6px 0">
+      <button class="btn ghost sm" id="izinToggle">İzin ekle/çıkar</button>
+    </div>
+    <h4 style="margin:10px 0 4px;font-size:13px;color:var(--muted)">Atamalar</h4>
+    <div id="assignList"></div>
+    <div class="card" style="margin-top:10px;background:var(--panel2)">
+      <h3 style="color:var(--txt)">Yeni Atama</h3>
+      <label>Personel</label>
+      <select id="aStaff"></select>
+      <div class="row">
+        <div><label>Vardiya</label>
+          <select id="aShift"><option value="24">24 saat nöbet</option><option value="16">16 saat nöbet</option><option value="8">8 saat mesai</option></select>
+        </div>
+        <div><label>Alan</label>
+          <select id="aArea">
+            <option value="sari">Sarı</option><option value="kirmizi">Kırmızı</option><option value="travma">Travma</option>
+            <option value="yesil">Yeşil</option><option value="ortaci">Ortacı</option><option value="yatis">Yatış takibi</option>
+            <option value="yogun">Yoğun bakım</option><option value="mesai">Mesai</option>
+          </select>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:8px">
+        <input type="checkbox" id="aLock" style="width:auto"> Manuel kilitle (otomatik oluşturmada değişmez)
+      </label>
+      <button class="btn" style="width:100%;margin-top:8px" id="addAssignBtn">+ Atamayı Ekle</button>
+    </div>
+    <div style="text-align:right;margin-top:10px"><button class="btn ghost" id="closeModal">Kapat</button></div>
+  </div>
+</div>
+
+<!-- İstisna modalı -->
+<div class="modal-bg" id="excBg">
+  <div class="modal">
+    <h3 id="excTitle">İstisna Günleri</h3>
+    <div class="hint">Bir güne tıkla: <b style="color:var(--err)">Kırmızı = Kesin olamaz</b> → <b style="color:var(--warn)">Turuncu = Tercih etmez</b> → gri = normal.</div>
+    <div style="display:flex;align-items:center;gap:10px;margin:10px 0">
+      <button class="btn ghost sm" id="excPrev">‹</button>
+      <b id="excMonthLabel" style="flex:1;text-align:center"></b>
+      <button class="btn ghost sm" id="excNext">›</button>
+    </div>
+    <div class="mini" id="excMini"></div>
+    <div style="text-align:right;margin-top:14px"><button class="btn" id="excClose">Tamam</button></div>
+  </div>
+</div>
+
+<!-- İhtiyaç modalı -->
+<div class="modal-bg" id="reqBg">
+  <div class="modal">
+    <h3>⚙ Günlük İhtiyaç</h3>
+    <div class="hint">Her alan için her gün kaç kişi, hangi vardiya ve <b>aynı kıdemden en fazla kaç kişi</b> (denge) olacağını gir. Boş = sınırsız. Ortacı gün içinde tek kişidir, travma her gün zorunludur, yatış takibini pratisyenler yapar.</div>
+    <table class="gtable" id="reqTable"></table>
+    <div class="row" style="margin-top:12px;align-items:end">
+      <div><label>Yoğun bakım — aylık toplam görev</label><input type="number" id="yogunMonthly" min="0" value="6"></div>
+      <div style="flex:2"></div>
+    </div>
+    <div style="text-align:right;margin-top:14px">
+      <button class="btn ghost" id="reqReset">Varsayılana dön</button>
+      <button class="btn" id="reqSave">Kaydet</button>
+    </div>
+  </div>
+</div>
+
+<!-- Kota modalı -->
+<div class="modal-bg" id="quotaBg">
+  <div class="modal wide">
+    <h3>📋 Kıdem Bazlı Aylık Kotalar</h3>
+    <div class="hint">Her grup için <b>kişi başına aylık</b> hedef: alanlarda kaç nöbet ve saat türlerinde kaç kez. Boş = serbest (kısıt yok). Hedeflenir; takvimi doldurmak için gerekmedikçe aşılmaz, aşılırsa uyarı verilir. Örn. Orta kıdem asistan → Sarı: 4, Kırmızı: 1, 16s: 1.</div>
+    <div style="overflow:auto;max-height:60vh;margin-top:8px">
+      <table class="gtable" id="quotaTable"></table>
+    </div>
+    <div style="text-align:right;margin-top:14px">
+      <button class="btn ghost" id="quotaClear">Tümünü temizle</button>
+      <button class="btn" id="quotaSave">Kaydet</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ SABİTLER ============ */
+const AREAS={sari:'Sarı',kirmizi:'Kırmızı',travma:'Travma',yesil:'Yeşil',ortaci:'Ortacı',yatis:'Yatış takibi',yogun:'Yoğun bakım',mesai:'Mesai'};
+const SHIFTS={'24':'24s Nöbet','16':'16s Nöbet','8':'8s Mesai'};
+const ROLE_AREAS={
+  ogretim:['sari','kirmizi','travma'],
+  uzman:['sari','kirmizi','travma','yesil','mesai'],
+  asistan:['sari','kirmizi','travma','yesil','ortaci','yogun'],
+  pratisyen:['yesil','sari','yatis']
+};
+const SENIORITY_AREAS={
+  ust:['sari','kirmizi','travma','ortaci'],
+  orta:['sari','kirmizi','travma','ortaci'],
+  alt:['sari','travma','yesil','yogun']
+};
+const REQ_AREAS=['ortaci','travma','yatis','kirmizi','sari','yesil'];
+const GROUPS=[
+  {id:'ogretim',label:'Öğretim üyesi'},
+  {id:'uzman',label:'Uzman'},
+  {id:'asistan_ust',label:'Asistan · Üst'},
+  {id:'asistan_orta',label:'Asistan · Orta'},
+  {id:'asistan_alt',label:'Asistan · Alt'},
+  {id:'pratisyen',label:'Pratisyen'}
+];
+function defaultReqs(){
+  const base=()=>({ortaci:{count:1,shift:'24'},travma:{count:1,shift:'16'},yatis:{count:2,shift:'24'},kirmizi:{count:1,shift:'24'},sari:{count:4,shift:'24'},yesil:{count:1,shift:'24'}});
+  return {weekday:base(),weekend:base(),maxSameSen:{sari:2},yogunMonthly:6};
+}
+
+/* ============ VERİ ============ */
+let db=load();
+function load(){
+  let d; try{ d=JSON.parse(localStorage.getItem('shiftDB')); }catch(e){}
+  if(!d) d={staff:[],assign:{},izin:{}};
+  if(!d.reqs) d.reqs=defaultReqs();
+  if(!d.reqs.maxSameSen) d.reqs.maxSameSen={sari:2};
+  ['weekday','weekend'].forEach(k=>{ if(!d.reqs[k].yatis) d.reqs[k].yatis={count:2,shift:'24'}; });
+  if(!d.quotas) d.quotas={};
+  d.staff.forEach(s=>{ if(!s.exceptions) s.exceptions={}; });
+  return d;
+}
+function save(){ localStorage.setItem('shiftDB',JSON.stringify(db)); }
+function uid(){ return Math.random().toString(36).slice(2,9); }
+
+let cur=new Date(); cur.setHours(0,0,0,0);
+let view='month', modalDate=null, excStaffId=null, excCur=new Date(), editingId=null;
+
+/* ============ TARİH ============ */
+function iso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function parseISO(s){ const[y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
+function isWeekend(d){ const g=d.getDay(); return g===0||g===6; }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+const MONTHS=['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+const DOW=['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'];
+const FULLDOW=['Pazar','Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi'];
+
+/* ============ GRUP YARDIMCILARI ============ */
+function groupId(s){ return s.role==='asistan' ? 'asistan_'+s.seniority : s.role; }
+function senKey(s){ return s.role==='asistan' ? s.seniority : s.role; }
+
+/* ============ PERSONEL ============ */
+function areaOptionsFor(role,sen){ return role==='asistan'?(SENIORITY_AREAS[sen]||[]):(ROLE_AREAS[role]||[]); }
+function renderAreaChecks(preselect){
+  const role=document.getElementById('sRole').value;
+  const sen=document.getElementById('sSeniority').value;
+  document.getElementById('seniorityWrap').style.display=role==='asistan'?'':'none';
+  const areas=areaOptionsFor(role,sen);
+  const sel=preselect||areas;
+  document.getElementById('areaChecks').innerHTML=areas.map(a=>
+    `<label><input type="checkbox" class="areaChk" value="${a}" ${sel.includes(a)?'checked':''}>${AREAS[a]}</label>`).join('');
+}
+function addStaff(){
+  const name=document.getElementById('sName').value.trim();
+  if(!name){ alert('Ad girin'); return; }
+  const role=document.getElementById('sRole').value;
+  const sen=role==='asistan'?document.getElementById('sSeniority').value:null;
+  const areas=[...document.querySelectorAll('.areaChk:checked')].map(c=>c.value);
+  if(editingId){
+    const s=db.staff.find(x=>x.id===editingId);
+    if(s){ s.name=name; s.role=role; s.seniority=sen; s.areas=areas; }
+    endEdit();
+  }else{
+    db.staff.push({id:uid(),name,role,seniority:sen,areas,exceptions:{}});
+  }
+  document.getElementById('sName').value='';
+  save(); renderStaff(); render();
+}
+function editStaff(id){
+  const s=db.staff.find(x=>x.id===id); if(!s) return;
+  editingId=id;
+  document.getElementById('sName').value=s.name;
+  document.getElementById('sRole').value=s.role;
+  if(s.role==='asistan') document.getElementById('sSeniority').value=s.seniority||'ust';
+  renderAreaChecks(s.areas);
+  document.getElementById('staffFormTitle').textContent='Personeli Düzenle';
+  document.getElementById('addStaffLabel').textContent='💾 Kaydet';
+  document.getElementById('cancelEditBtn').style.display='';
+  document.getElementById('staffFormCard').classList.add('editing');
+  document.getElementById('sName').focus();
+}
+function endEdit(){
+  editingId=null;
+  document.getElementById('staffFormTitle').textContent='Personel Ekle';
+  document.getElementById('addStaffLabel').textContent='+ Ekle';
+  document.getElementById('cancelEditBtn').style.display='none';
+  document.getElementById('staffFormCard').classList.remove('editing');
+  document.getElementById('sName').value='';
+  renderAreaChecks();
+}
+function roleLabel(s){
+  const r={ogretim:'Öğretim üyesi',uzman:'Uzman',asistan:'Asistan',pratisyen:'Pratisyen'}[s.role];
+  const sen=s.seniority?({ust:'Üst',orta:'Orta',alt:'Alt'}[s.seniority]+' kıdem'):'';
+  return sen?`${r} · ${sen}`:r;
+}
+function excSummary(s){
+  const v=Object.values(s.exceptions||{});
+  const h=v.filter(x=>x==='hard').length, so=v.filter(x=>x==='soft').length;
+  if(!h&&!so) return '';
+  return `📅 ${h?h+' kesin':''}${h&&so?', ':''}${so?so+' tercih':''} istisna`;
+}
+function renderStaff(){
+  document.getElementById('staffCount').textContent=db.staff.length;
+  const el=document.getElementById('staffList');
+  if(!db.staff.length){ el.innerHTML='<div class="empty">Personel ekleyin veya Excel içe aktarın</div>'; return; }
+  el.innerHTML=db.staff.map(s=>`
+    <div class="staff-item">
+      <div class="top">
+        <div style="font-weight:600">${s.name}</div>
+        <div style="display:flex;gap:4px">
+          <button class="btn ghost sm" title="Düzenle" onclick="editStaff('${s.id}')">✎</button>
+          <button class="btn ghost sm" title="İstisna günleri" onclick="openExc('${s.id}')">📅</button>
+          <button class="btn danger sm" onclick="delStaff('${s.id}')">✕</button>
+        </div>
+      </div>
+      <div class="meta">${roleLabel(s)} · ${s.areas.map(a=>AREAS[a]).join(', ')||'-'}</div>
+      ${excSummary(s)?`<div class="exc">${excSummary(s)}</div>`:''}
+    </div>`).join('');
+}
+function delStaff(id){
+  if(!confirm('Personel silinsin mi?')) return;
+  db.staff=db.staff.filter(s=>s.id!==id);
+  for(const d in db.assign) db.assign[d]=db.assign[d].filter(a=>a.staffId!==id);
+  for(const d in db.izin) db.izin[d]=db.izin[d].filter(i=>i!==id);
+  if(editingId===id) endEdit();
+  save(); renderStaff(); render();
+}
+
+/* ============ EXCEL IMPORT/TEMPLATE ============ */
+function normTr(s){ return String(s||'').trim().toLocaleLowerCase('tr').replace(/i̇/g,'i'); }
+function parseRole(str){ const t=normTr(str);
+  if(t.includes('öğretim')||t.includes('ogretim')||t.includes('hoca')||t.includes('öğr')) return 'ogretim';
+  if(t.includes('uzman')) return 'uzman';
+  if(t.includes('prati')) return 'pratisyen';
+  if(t.includes('asistan')||t.includes('araştırma')) return 'asistan';
+  return 'asistan';
+}
+function parseSen(str){ const t=normTr(str);
+  if(t.includes('üst')||t.includes('ust')) return 'ust';
+  if(t.includes('orta')) return 'orta';
+  if(t.includes('alt')) return 'alt';
+  return null;
+}
+function parseAreas(str,role,sen){
+  const t=normTr(str);
+  const map={'sarı':'sari','sari':'sari','kırmızı':'kirmizi','kirmizi':'kirmizi','travma':'travma','yeşil':'yesil','yesil':'yesil','ortacı':'ortaci','ortaci':'ortaci','yatış':'yatis','yatis':'yatis','yoğun':'yogun','yogun':'yogun'};
+  let out=[];
+  Object.keys(map).forEach(k=>{ if(t.includes(k)&&!out.includes(map[k])) out.push(map[k]); });
+  // sadece kişinin yetkili olabileceği alanlar
+  const allowed=areaOptionsFor(role,sen);
+  out=out.filter(a=>allowed.includes(a));
+  return out.length?out:allowed;
+}
+function importExcel(file){
+  const rdr=new FileReader();
+  rdr.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      let added=0;
+      rows.forEach((r,i)=>{
+        if(!r||!r.length) return;
+        const name=String(r[0]||'').trim();
+        if(!name) return;
+        if(i===0 && /ad|isim|name|soyad/i.test(name)) return; // başlık satırı
+        const role=parseRole(r[1]);
+        const sen=role==='asistan'?(parseSen(r[2])||'orta'):null;
+        const areas=parseAreas(r[3],role,sen);
+        db.staff.push({id:uid(),name,role,seniority:sen,areas,exceptions:{}});
+        added++;
+      });
+      save(); renderStaff(); render();
+      alert(added?`${added} personel içe aktarıldı.`:'Uygun satır bulunamadı. Örnek Excel formatını kullanın.');
+    }catch(err){ alert('Excel okunamadı: '+err.message); }
+  };
+  rdr.readAsArrayBuffer(file);
+}
+function downloadTemplate(){
+  const rows=[
+    ['Ad Soyad','Rol','Kıdem','Alanlar (virgülle, boş bırakılırsa otomatik)'],
+    ['Dr. Ahmet Yılmaz','Asistan','Üst','Sarı, Kırmızı, Travma, Ortacı'],
+    ['Dr. Ayşe Demir','Asistan','Orta','Sarı, Kırmızı, Travma, Ortacı'],
+    ['Dr. Mehmet Kaya','Asistan','Alt','Sarı, Travma, Yeşil, Yoğun bakım'],
+    ['Dr. Zeynep Ak','Pratisyen','','Yeşil, Sarı, Yatış takibi'],
+    ['Dr. Ali Vural','Uzman','','Sarı, Kırmızı, Travma, Yeşil'],
+    ['Prof. Dr. Can Öz','Öğretim üyesi','','Sarı, Kırmızı, Travma']
+  ];
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:22},{wch:16},{wch:10},{wch:42}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Personel');
+  XLSX.writeFile(wb,'personel_sablon.xlsx');
+}
+
+/* ============ İSTİSNA ============ */
+function openExc(id){ excStaffId=id; excCur=new Date(cur);
+  document.getElementById('excTitle').textContent='İstisna Günleri — '+db.staff.find(s=>s.id===id).name;
+  renderExcMini(); document.getElementById('excBg').classList.add('show'); }
+function renderExcMini(){
+  const s=db.staff.find(x=>x.id===excStaffId); if(!s)return;
+  const y=excCur.getFullYear(),m=excCur.getMonth();
+  document.getElementById('excMonthLabel').textContent=`${MONTHS[m]} ${y}`;
+  const first=new Date(y,m,1); let start=(first.getDay()+6)%7;
+  const daysIn=new Date(y,m+1,0).getDate();
+  let html=DOW.map(d=>`<div class="md">${d}</div>`).join('');
+  for(let i=0;i<start;i++) html+='<div class="mc blank"></div>';
+  for(let dn=1;dn<=daysIn;dn++){ const dISO=iso(new Date(y,m,dn)); const st=s.exceptions[dISO]||'';
+    html+=`<div class="mc ${st}" onclick="cycleExc('${dISO}')">${dn}</div>`; }
+  document.getElementById('excMini').innerHTML=html;
+}
+function cycleExc(dISO){
+  const s=db.staff.find(x=>x.id===excStaffId); if(!s)return;
+  const cyc={'':'hard',hard:'soft',soft:''}; const nx=cyc[s.exceptions[dISO]||''];
+  if(nx) s.exceptions[dISO]=nx; else delete s.exceptions[dISO];
+  save(); renderExcMini();
+}
+document.getElementById('excPrev').onclick=()=>{ excCur.setMonth(excCur.getMonth()-1); renderExcMini(); };
+document.getElementById('excNext').onclick=()=>{ excCur.setMonth(excCur.getMonth()+1); renderExcMini(); };
+document.getElementById('excClose').onclick=()=>{ document.getElementById('excBg').classList.remove('show'); renderStaff(); };
+
+/* ============ İHTİYAÇ PANELİ ============ */
+function openReq(){
+  let html='<tr><th>Alan</th><th>Hafta içi</th><th>Hafta sonu</th><th>Vardiya</th><th>Aynı kıdemden max</th></tr>';
+  REQ_AREAS.forEach(a=>{
+    const wd=db.reqs.weekday[a]||{count:0,shift:'24'}, we=db.reqs.weekend[a]||{count:0,shift:'24'};
+    const cap=db.reqs.maxSameSen[a]!=null?db.reqs.maxSameSen[a]:'';
+    html+=`<tr>
+      <td style="text-align:left"><span class="pill" style="background:var(--${a});color:#0b1220">${AREAS[a]}</span></td>
+      <td><input type="number" min="0" id="wd_${a}" value="${wd.count}"></td>
+      <td><input type="number" min="0" id="we_${a}" value="${we.count}"></td>
+      <td><select id="sh_${a}"><option value="24"${wd.shift==='24'?' selected':''}>24s</option><option value="16"${wd.shift==='16'?' selected':''}>16s</option><option value="8"${wd.shift==='8'?' selected':''}>8s</option></select></td>
+      <td><input type="number" min="1" class="narrow" id="cap_${a}" value="${cap}" placeholder="—"></td>
+    </tr>`;
+  });
+  document.getElementById('reqTable').innerHTML=html;
+  document.getElementById('yogunMonthly').value=db.reqs.yogunMonthly||0;
+  document.getElementById('reqBg').classList.add('show');
+}
+function saveReq(){
+  REQ_AREAS.forEach(a=>{
+    const c1=+document.getElementById('wd_'+a).value||0;
+    const c2=+document.getElementById('we_'+a).value||0;
+    const sh=document.getElementById('sh_'+a).value;
+    db.reqs.weekday[a]={count:c1,shift:sh};
+    db.reqs.weekend[a]={count:c2,shift:sh};
+    const capV=document.getElementById('cap_'+a).value;
+    if(capV==='') delete db.reqs.maxSameSen[a]; else db.reqs.maxSameSen[a]=+capV;
+  });
+  db.reqs.yogunMonthly=+document.getElementById('yogunMonthly').value||0;
+  save(); document.getElementById('reqBg').classList.remove('show');
+}
+document.getElementById('reqBtn').onclick=openReq;
+document.getElementById('reqSave').onclick=saveReq;
+document.getElementById('reqReset').onclick=()=>{ db.reqs=defaultReqs(); save(); openReq(); };
+
+/* ============ KOTA PANELİ ============ */
+const QUOTA_AREAS=['sari','kirmizi','travma','yesil','ortaci','yatis','yogun'];
+const QUOTA_SHIFTS=['24','16','8'];
+function openQuota(){
+  let head='<tr><th style="text-align:left">Grup</th>';
+  QUOTA_AREAS.forEach(a=>head+=`<th><span class="pill" style="background:var(--${a});color:#0b1220">${AREAS[a]}</span></th>`);
+  head+='<th class="sep">24s</th>'+QUOTA_SHIFTS.slice(1).map(s=>`<th>${s}s</th>`).join('')+'</tr>';
+  let body='';
+  GROUPS.forEach(g=>{
+    const q=db.quotas[g.id]||{areas:{},shifts:{}};
+    body+=`<tr><td style="text-align:left;font-weight:600">${g.label}</td>`;
+    QUOTA_AREAS.forEach(a=>{ const v=q.areas&&q.areas[a]!=null?q.areas[a]:'';
+      body+=`<td><input type="number" min="0" id="q_${g.id}_a_${a}" value="${v}" placeholder="—"></td>`; });
+    QUOTA_SHIFTS.forEach((sh,i)=>{ const v=q.shifts&&q.shifts[sh]!=null?q.shifts[sh]:'';
+      body+=`<td class="${i===0?'sep':''}"><input type="number" min="0" id="q_${g.id}_s_${sh}" value="${v}" placeholder="—"></td>`; });
+    body+='</tr>';
+  });
+  document.getElementById('quotaTable').innerHTML=head+body;
+  document.getElementById('quotaBg').classList.add('show');
+}
+function saveQuota(){
+  const q={};
+  GROUPS.forEach(g=>{
+    const areas={},shifts={};
+    QUOTA_AREAS.forEach(a=>{ const v=document.getElementById(`q_${g.id}_a_${a}`).value; if(v!=='') areas[a]=+v; });
+    QUOTA_SHIFTS.forEach(sh=>{ const v=document.getElementById(`q_${g.id}_s_${sh}`).value; if(v!=='') shifts[sh]=+v; });
+    if(Object.keys(areas).length||Object.keys(shifts).length) q[g.id]={areas,shifts};
+  });
+  db.quotas=q; save(); document.getElementById('quotaBg').classList.remove('show');
+}
+document.getElementById('quotaBtn').onclick=openQuota;
+document.getElementById('quotaSave').onclick=saveQuota;
+document.getElementById('quotaClear').onclick=()=>{ if(confirm('Tüm kotalar silinsin mi?')){ db.quotas={}; save(); openQuota(); } };
+
+/* ============ ATAMA & İZİN ============ */
+function dayAssigns(d){ return db.assign[d]||[]; }
+function staffById(id){ return db.staff.find(s=>s.id===id); }
+function isIzin(id,d){ return (db.izin[d]||[]).includes(id); }
+function addAssign(){
+  const staffId=document.getElementById('aStaff').value;
+  const shift=document.getElementById('aShift').value;
+  const area=document.getElementById('aArea').value;
+  const lock=document.getElementById('aLock').checked;
+  if(!staffId){ alert('Personel seçin'); return; }
+  (db.assign[modalDate]=db.assign[modalDate]||[]).push({id:uid(),staffId,shift,area,lock});
+  save(); openModal(modalDate); render();
+}
+function delAssign(aid){
+  const list=db.assign[modalDate]||[]; const a=list.find(x=>x.id===aid);
+  if(a&&a.lock&&!confirm('Kilitli atama. Yine de silinsin mi?')) return;
+  db.assign[modalDate]=list.filter(x=>x.id!==aid);
+  save(); openModal(modalDate); render();
+}
+function toggleIzin(){
+  const p=prompt('İzne alınacak/çıkarılacak personel adının ilk harfleri:');
+  if(!p) return;
+  const s=db.staff.find(x=>x.name.toLowerCase().includes(p.toLowerCase()));
+  if(!s){ alert('Bulunamadı'); return; }
+  db.izin[modalDate]=db.izin[modalDate]||[];
+  if(db.izin[modalDate].includes(s.id)) db.izin[modalDate]=db.izin[modalDate].filter(i=>i!==s.id);
+  else db.izin[modalDate].push(s.id);
+  save(); openModal(modalDate); render();
+}
+
+/* ============ KURAL KONTROLLERİ ============ */
+function dayWarnings(dISO){
+  const w=[]; const list=dayAssigns(dISO); const d=parseISO(dISO);
+  list.forEach(a=>{ if(isIzin(a.staffId,dISO)) w.push(`${staffById(a.staffId)?.name}: izinli ama görev atanmış`); });
+  const ortaci=list.filter(a=>a.area==='ortaci');
+  if(ortaci.length>1) w.push(`Ortacı tek kişi olmalı (${ortaci.length} atanmış)`);
+  ortaci.forEach(a=>{ const s=staffById(a.staffId);
+    if(s&&!(s.role==='asistan'&&(s.seniority==='ust'||s.seniority==='orta'))) w.push(`${s.name}: ortacı olamaz`); });
+  list.filter(a=>a.area==='yatis').forEach(a=>{ const s=staffById(a.staffId);
+    if(s&&s.role!=='pratisyen') w.push(`${s.name}: yatış takibini pratisyen yapar`); });
+  if(db.staff.length && !list.some(a=>a.area==='travma')) w.push('Travma ataması yok (zorunlu)');
+  list.forEach(a=>{ const s=staffById(a.staffId);
+    if(s&&!s.areas.includes(a.area)) w.push(`${s.name}: ${AREAS[a.area]} yetkisi yok`); });
+  // kıdem dengesi
+  for(const ar in db.reqs.maxSameSen){ const cap=db.reqs.maxSameSen[ar]; if(!cap)continue;
+    const cnt={}; list.filter(a=>a.area===ar).forEach(a=>{ const s=staffById(a.staffId); if(!s)return; const k=senKey(s); cnt[k]=(cnt[k]||0)+1; });
+    for(const k in cnt) if(cnt[k]>cap) w.push(`${AREAS[ar]}: aynı kıdemden ${cnt[k]} kişi (max ${cap})`);
+  }
+  const nextISO=iso(addDays(d,1));
+  list.forEach(a=>{ if(a.shift==='24'||a.shift==='16'){
+    if(dayAssigns(nextISO).some(x=>x.staffId===a.staffId)) w.push(`${staffById(a.staffId)?.name}: ${a.shift}s sonrası ertesi gün görev var`); } });
+  list.forEach(a=>{ let st=1; for(let k=1;k<=3;k++){ if(dayAssigns(iso(addDays(d,-k))).some(x=>x.staffId===a.staffId)) st++; else break; }
+    if(st>3) w.push(`${staffById(a.staffId)?.name}: 3 günden fazla üst üste`); });
+  return [...new Set(w)];
+}
+
+/* ============ OTOMATİK OLUŞTURUCU ============ */
+function autoGenerate(){
+  if(!db.staff.length){ alert('Önce personel ekleyin.'); return; }
+  if(!confirm('Bu ayın KİLİTLİ OLMAYAN atamaları silinip yeniden oluşturulacak. Kilitli atamalar ve izinler korunur. Devam?')) return;
+  const y=cur.getFullYear(),m=cur.getMonth(), daysIn=new Date(y,m+1,0).getDate();
+  for(let dn=1;dn<=daysIn;dn++){ const dISO=iso(new Date(y,m,dn));
+    if(db.assign[dISO]) db.assign[dISO]=db.assign[dISO].filter(a=>a.lock); }
+  const tot={},night={},wknd={},yog={},aCnt={},shCnt={};
+  db.staff.forEach(s=>{tot[s.id]=0;night[s.id]=0;wknd[s.id]=0;yog[s.id]=0;aCnt[s.id]={};shCnt[s.id]={};});
+  function bump(a,d){ const id=a.staffId; if(tot[id]===undefined)return;
+    tot[id]++; if(a.shift==='24'||a.shift==='16')night[id]++; if(isWeekend(d))wknd[id]++;
+    if(a.area==='yogun')yog[id]++; aCnt[id][a.area]=(aCnt[id][a.area]||0)+1; shCnt[id][a.shift]=(shCnt[id][a.shift]||0)+1; }
+  for(let dn=1;dn<=daysIn;dn++){ const d=new Date(y,m,dn); (db.assign[iso(d)]||[]).forEach(a=>bump(a,d)); }
+  const gaps=[], overQuota={}, balanceFail={};
+  function canAssign(s,d,dISO,area,shift){
+    if(!s.areas.includes(area)) return false;
+    if(area==='ortaci'&&!(s.role==='asistan'&&(s.seniority==='ust'||s.seniority==='orta'))) return false;
+    if(area==='yatis'&&s.role!=='pratisyen') return false;
+    if(s.exceptions&&s.exceptions[dISO]==='hard') return false;
+    if(isIzin(s.id,dISO)) return false;
+    if((db.assign[dISO]||[]).some(a=>a.staffId===s.id)) return false;
+    if((db.assign[iso(addDays(d,-1))]||[]).some(a=>a.staffId===s.id&&(a.shift==='24'||a.shift==='16'))) return false;
+    if((shift==='24'||shift==='16')&&(db.assign[iso(addDays(d,1))]||[]).some(a=>a.staffId===s.id)) return false;
+    let st=1; for(let k=1;k<=3;k++){ if((db.assign[iso(addDays(d,-k))]||[]).some(a=>a.staffId===s.id)) st++; else break; }
+    if(st>3) return false;
+    return true;
+  }
+  function tgt(s,key,type){ const q=db.quotas[groupId(s)]; if(!q)return null; const map=type==='a'?q.areas:q.shifts; return (map&&map[key]!=null)?map[key]:null; }
+  function score(s,dISO,shift,area){
+    let sc=tot[s.id]*10 + wknd[s.id]*3 + ((shift==='24'||shift==='16')?night[s.id]*3:0);
+    const ta=tgt(s,area,'a'); if(ta!=null){ const c=aCnt[s.id][area]||0; sc += c>=ta ? 100000+(c-ta)*100 : -(ta-c)*40; }
+    const tsh=tgt(s,shift,'s'); if(tsh!=null){ const c=shCnt[s.id][shift]||0; sc += c>=tsh ? 100000+(c-tsh)*100 : -(tsh-c)*40; }
+    if(s.exceptions&&s.exceptions[dISO]==='soft') sc+=1000;
+    return sc+Math.random()*0.5;
+  }
+  function balancePool(pool,dISO,area){
+    const cap=db.reqs.maxSameSen[area]; if(!cap) return pool;
+    const cnt={}; (db.assign[dISO]||[]).filter(a=>a.area===area).forEach(a=>{ const s=staffById(a.staffId); if(!s)return; const k=senKey(s); cnt[k]=(cnt[k]||0)+1; });
+    const filt=pool.filter(s=>(cnt[senKey(s)]||0)<cap);
+    if(filt.length) return filt;
+    balanceFail[`${dISO}|${area}`]=1; return pool;
+  }
+  function place(s,d,dISO,shift,area){
+    const a={id:uid(),staffId:s.id,shift,area,lock:false};
+    (db.assign[dISO]=db.assign[dISO]||[]).push(a); bump(a,d);
+  }
+  function pick(pool,d,dISO,shift,area){
+    pool.sort((a,b)=>score(a,dISO,shift,area)-score(b,dISO,shift,area));
+    const s=pool[0];
+    const ta=tgt(s,area,'a'); if(ta!=null&&(aCnt[s.id][area]||0)>=ta) overQuota[`${s.id}|a|${area}`]=(overQuota[`${s.id}|a|${area}`]||0)+1;
+    const tsh=tgt(s,shift,'s'); if(tsh!=null&&(shCnt[s.id][shift]||0)>=tsh) overQuota[`${s.id}|s|${shift}`]=(overQuota[`${s.id}|s|${shift}`]||0)+1;
+    place(s,d,dISO,shift,area); return s;
+  }
+  // 1) Yoğun bakım
+  const yReq=db.reqs.yogunMonthly||0;
+  if(yReq>0){ const step=daysIn/yReq;
+    for(let i=0;i<yReq;i++){ const dn=Math.min(daysIn,Math.max(1,Math.round(i*step)+1)); const d=new Date(y,m,dn),dISO=iso(d);
+      let pool=db.staff.filter(s=>canAssign(s,d,dISO,'yogun','24'));
+      if(!pool.length){ gaps.push(`${dISO}: yoğun bakım için uygun kişi yok`); continue; }
+      pool.sort((a,b)=>(yog[a.id]-yog[b.id])||(score(a,dISO,'24','yogun')-score(b,dISO,'24','yogun')));
+      pick([pool[0]],d,dISO,'24','yogun');
+    } }
+  // 2) Günlük alanlar
+  for(let dn=1;dn<=daysIn;dn++){
+    const d=new Date(y,m,dn),dISO=iso(d),wk=isWeekend(d);
+    const reqs=wk?db.reqs.weekend:db.reqs.weekday;
+    for(const area of REQ_AREAS){
+      const r=reqs[area]; if(!r||r.count<=0) continue;
+      let need=r.count-(db.assign[dISO]||[]).filter(a=>a.area===area).length;
+      while(need>0){
+        let pool=db.staff.filter(s=>canAssign(s,d,dISO,area,r.shift));
+        if(!pool.length){ gaps.push(`${dISO} · ${AREAS[area]}: uygun kişi yok (${need} eksik)`); break; }
+        pool=balancePool(pool,dISO,area);
+        pick(pool,d,dISO,r.shift,area); need--;
+      }
+    }
+  }
+  save(); render();
+  // rapor
+  const msgs=[];
+  if(gaps.length) msgs.push(`⛔ ${gaps.length} nokta doldurulamadı:\n`+gaps.slice(0,12).join('\n')+(gaps.length>12?`\n… (+${gaps.length-12})`:''));
+  const oq=Object.entries(overQuota);
+  if(oq.length){ msgs.push(`⚠ Kota aşımı (${oq.length}):\n`+oq.slice(0,10).map(([k,v])=>{ const[id,t,key]=k.split('|'); const nm=staffById(id)?.name||id; const lbl=t==='a'?AREAS[key]:key+'s'; return `${nm} · ${lbl}: +${v}`; }).join('\n')); }
+  const bf=Object.keys(balanceFail);
+  if(bf.length) msgs.push(`⚖ Kıdem dengesi sağlanamayan ${bf.length} slot (personel kısıtı).`);
+  alert(msgs.length ? msgs.join('\n\n') : '✓ Takvim oluşturuldu — tüm ihtiyaçlar karşılandı, kural/kota ihlali yok.');
+}
+document.getElementById('autoBtn').onclick=autoGenerate;
+
+/* ============ GÖRÜNÜMLER ============ */
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active'); view=t.dataset.view; render();
+});
+function render(){ renderStats();
+  if(view==='month') renderMonth(); else if(view==='week') renderWeek(); else renderDay(); }
+function assignChip(a){ const s=staffById(a.staffId);
+  return `<div class="assign" style="background:var(--${a.area})" title="${SHIFTS[a.shift]} · ${AREAS[a.area]}">${a.lock?'🔒':''}${s?s.name.split(' ').slice(-1)[0]:'?'} ${a.shift}s</div>`; }
+function renderMonth(){
+  const y=cur.getFullYear(),m=cur.getMonth();
+  document.getElementById('periodLabel').textContent=`${MONTHS[m]} ${y}`;
+  const first=new Date(y,m,1); let start=(first.getDay()+6)%7;
+  const daysIn=new Date(y,m+1,0).getDate();
+  let html='<div class="grid-month">'+DOW.map(d=>`<div class="dow">${d}</div>`).join('');
+  const today=iso(new Date());
+  for(let i=0;i<start;i++){ html+=cell(new Date(y,m,-(start-1-i)),true,today); }
+  for(let dn=1;dn<=daysIn;dn++){ html+=cell(new Date(y,m,dn),false,today); }
+  const tail=(7-(start+daysIn)%7)%7;
+  for(let i=1;i<=tail;i++){ html+=cell(new Date(y,m+1,i),true,today); }
+  html+='</div>'; document.getElementById('viewArea').innerHTML=html;
+}
+function cell(d,other,today){
+  const dISO=iso(d); const list=dayAssigns(dISO);
+  const izinN=(db.izin[dISO]||[]).length; const warns=other?[]:dayWarnings(dISO);
+  let cls='day'+(other?' other':'')+(isWeekend(d)?' weekend':'')+(dISO===today?' today':'')+(izinN?' izin-day':'');
+  return `<div class="${cls}" onclick="openModal('${dISO}')">
+    <div class="num">${d.getDate()}</div>
+    ${list.slice(0,5).map(assignChip).join('')}
+    ${list.length>5?`<div class="assign" style="background:var(--mesai)">+${list.length-5}</div>`:''}
+    ${izinN?`<div class="assign" style="background:#3a2a2a;color:#fca5a5">${izinN} izin</div>`:''}
+    ${warns.length?`<div class="warn-badge" title="${warns.join(' | ')}">!</div>`:''}
+  </div>`;
+}
+function renderWeek(){
+  const d=new Date(cur); const off=(d.getDay()+6)%7; const mon=addDays(d,-off); const end=addDays(mon,6);
+  document.getElementById('periodLabel').textContent=`${mon.getDate()} ${MONTHS[mon.getMonth()]} - ${end.getDate()} ${MONTHS[end.getMonth()]} ${end.getFullYear()}`;
+  let html='<table class="week"><tr>';
+  for(let i=0;i<7;i++){ const dd=addDays(mon,i); html+=`<th>${DOW[i]}<br>${dd.getDate()}/${dd.getMonth()+1}</th>`; }
+  html+='</tr><tr>';
+  for(let i=0;i<7;i++){ const dd=addDays(mon,i),dISO=iso(dd),list=dayAssigns(dISO),warns=dayWarnings(dISO);
+    html+=`<td onclick="openModal('${dISO}')" style="cursor:pointer;min-width:110px">
+      ${list.map(assignChip).join('')||'<span style="color:var(--muted);font-size:11px">boş</span>'}
+      ${(db.izin[dISO]||[]).length?`<div class="assign" style="background:#3a2a2a;color:#fca5a5">${db.izin[dISO].length} izin</div>`:''}
+      ${warns.length?`<div style="color:var(--err);font-size:10px;margin-top:4px">⚠ ${warns.length} uyarı</div>`:''}</td>`; }
+  html+='</tr></table>'; document.getElementById('viewArea').innerHTML=html;
+}
+function renderDay(){
+  const dISO=iso(cur);
+  document.getElementById('periodLabel').textContent=`${cur.getDate()} ${MONTHS[cur.getMonth()]} ${cur.getFullYear()}, ${FULLDOW[cur.getDay()]}`;
+  const list=dayAssigns(dISO),warns=dayWarnings(dISO);
+  let html='<div class="day-detail">';
+  html+=`<button class="btn" onclick="openModal('${dISO}')">+ Bu güne atama yap</button>`;
+  if(warns.length) html+=`<div class="warnbox">⚠ ${warns.join('<br>⚠ ')}</div>`;
+  else if(list.length) html+=`<div class="warnbox ok">✓ Kural ihlali yok</div>`;
+  const byArea={}; list.forEach(a=>{ (byArea[a.area]=byArea[a.area]||[]).push(a); });
+  Object.keys(AREAS).forEach(ar=>{ if(!byArea[ar])return;
+    html+=`<div class="slot"><b style="color:var(--${ar})">${AREAS[ar]}</b>`;
+    byArea[ar].forEach(a=>{ const s=staffById(a.staffId);
+      html+=`<div style="font-size:13px;margin-top:4px">${a.lock?'🔒 ':''}${s?s.name:'?'} — ${SHIFTS[a.shift]}${s?' ('+roleLabel(s)+')':''}</div>`; });
+    html+='</div>'; });
+  const izl=(db.izin[dISO]||[]);
+  if(izl.length) html+=`<div class="slot"><b style="color:var(--err)">İzinli</b>${izl.map(id=>`<div style="font-size:13px;margin-top:4px">${staffById(id)?.name||''}</div>`).join('')}</div>`;
+  if(!list.length&&!izl.length) html+='<div class="empty">Bu gün için atama yok</div>';
+  html+='</div>'; document.getElementById('viewArea').innerHTML=html;
+}
+
+/* ============ MODAL ============ */
+function openModal(dISO){
+  modalDate=dISO; const d=parseISO(dISO);
+  document.getElementById('modalTitle').textContent=`${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} — ${FULLDOW[d.getDay()]}${isWeekend(d)?' (hafta sonu)':''}`;
+  document.getElementById('aStaff').innerHTML=db.staff.map(s=>`<option value="${s.id}">${s.name} (${roleLabel(s)})</option>`).join('');
+  renderAssignList(); refreshModalWarn(); document.getElementById('modalBg').classList.add('show');
+}
+function renderAssignList(){
+  const list=dayAssigns(modalDate); const el=document.getElementById('assignList');
+  if(!list.length){ el.innerHTML='<div class="empty" style="padding:12px">Atama yok</div>'; return; }
+  el.innerHTML=list.map(a=>{ const s=staffById(a.staffId);
+    return `<div class="assign-row">
+      <span class="pill" style="background:var(--${a.area});color:#0b1220">${AREAS[a.area]}</span>
+      <span class="lbl">${a.lock?'🔒 ':''}${s?s.name:'?'} · ${SHIFTS[a.shift]}</span>
+      <button class="btn danger sm" onclick="delAssign('${a.id}')">✕</button>
+    </div>`;}).join('');
+}
+function refreshModalWarn(){
+  const w=dayWarnings(modalDate);
+  document.getElementById('modalWarn').innerHTML=w.length
+    ? `<div class="warnbox">⚠ ${w.join('<br>⚠ ')}</div>` : `<div class="warnbox ok">✓ Kural ihlali yok</div>`;
+}
+document.getElementById('closeModal').onclick=()=>document.getElementById('modalBg').classList.remove('show');
+
+/* ============ İSTATİSTİK ============ */
+function renderStats(){
+  const y=cur.getFullYear(),m=cur.getMonth();
+  const c={},n={},w={};
+  db.staff.forEach(s=>{c[s.id]=0;n[s.id]=0;w[s.id]=0;});
+  for(const dISO in db.assign){ const d=parseISO(dISO);
+    if(d.getFullYear()!==y||d.getMonth()!==m) continue;
+    db.assign[dISO].forEach(a=>{ if(c[a.staffId]===undefined)return;
+      c[a.staffId]++; if(a.shift==='24'||a.shift==='16')n[a.staffId]++; if(isWeekend(d))w[a.staffId]++; }); }
+  const el=document.getElementById('statsBox');
+  if(!db.staff.length){ el.innerHTML='<div class="empty">Personel yok</div>'; return; }
+  el.innerHTML=`<div class="stat" style="color:var(--muted)"><span>İsim</span><span>Top / Gece / H.sonu</span></div>`+
+    db.staff.map(s=>`<div class="stat"><span>${s.name}</span><span>${c[s.id]} / ${n[s.id]} / ${w[s.id]}</span></div>`).join('');
+}
+
+/* ============ EXPORT ============ */
+function exportCSV(){
+  const y=cur.getFullYear(),m=cur.getMonth(); const daysIn=new Date(y,m+1,0).getDate();
+  let rows=[['Tarih','Gün','Personel','Rol','Vardiya','Alan','Kilit','Not']];
+  for(let dn=1;dn<=daysIn;dn++){
+    const d=new Date(y,m,dn),dISO=iso(d),gun=FULLDOW[d.getDay()];
+    dayAssigns(dISO).forEach(a=>{ const s=staffById(a.staffId);
+      rows.push([dISO,gun,s?s.name:'',s?roleLabel(s):'',SHIFTS[a.shift],AREAS[a.area],a.lock?'Evet':'',isIzin(a.staffId,dISO)?'İZİNLİ!':'']); });
+    (db.izin[dISO]||[]).forEach(id=>rows.push([dISO,gun,staffById(id)?.name||'','','','','','İZİN']));
+    const w=dayWarnings(dISO); if(w.length) rows.push([dISO,gun,'','','','','','UYARI: '+w.join(' | ')]);
+  }
+  const csv='﻿'+rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(';')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download=`nobet_${y}_${String(m+1).padStart(2,'0')}.csv`; a.click();
+}
+
+/* ============ NAV & OLAYLAR ============ */
+document.getElementById('prevBtn').onclick=()=>{ if(view==='month')cur.setMonth(cur.getMonth()-1); else if(view==='week')cur=addDays(cur,-7); else cur=addDays(cur,-1); render(); };
+document.getElementById('nextBtn').onclick=()=>{ if(view==='month')cur.setMonth(cur.getMonth()+1); else if(view==='week')cur=addDays(cur,7); else cur=addDays(cur,1); render(); };
+document.getElementById('todayBtn').onclick=()=>{ cur=new Date();cur.setHours(0,0,0,0); render(); };
+document.getElementById('exportBtn').onclick=exportCSV;
+document.getElementById('addStaffBtn').onclick=addStaff;
+document.getElementById('cancelEditBtn').onclick=endEdit;
+document.getElementById('addAssignBtn').onclick=addAssign;
+document.getElementById('izinToggle').onclick=toggleIzin;
+document.getElementById('sRole').onchange=()=>renderAreaChecks();
+document.getElementById('sSeniority').onchange=()=>renderAreaChecks();
+document.getElementById('templateBtn').onclick=downloadTemplate;
+document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
+document.getElementById('importFile').onchange=e=>{ if(e.target.files[0]) importExcel(e.target.files[0]); e.target.value=''; };
+document.querySelectorAll('.modal-bg').forEach(mb=>mb.addEventListener('click',e=>{ if(e.target===mb) mb.classList.remove('show'); }));
+
+/* ============ BAŞLAT ============ */
+renderAreaChecks(); renderStaff(); render();
+</script>
+</body>
+</html>
