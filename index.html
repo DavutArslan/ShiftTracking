@@ -150,6 +150,12 @@
       </div>
       <label>Yetkin alanlar</label>
       <div class="checkbox-row" id="areaChecks"></div>
+
+      <label style="margin-top:10px">Aylık kota — alan (opsiyonel, boş = serbest)</label>
+      <div class="checkbox-row" id="formQuotaAreas" style="gap:6px"></div>
+      <label style="margin-top:8px">Aylık kota — saat türü</label>
+      <div class="checkbox-row" id="formQuotaShifts" style="gap:6px"></div>
+
       <div class="row" style="margin-top:10px">
         <button class="btn" id="addStaffBtn"><span id="addStaffLabel">+ Ekle</span></button>
         <button class="btn ghost" id="cancelEditBtn" style="display:none;flex:0 0 auto">Vazgeç</button>
@@ -179,6 +185,8 @@
       <input id="orgBirim" placeholder="Örn. ACİL TIP KLİNİĞİ">
       <div class="hint">"📊 Resmi Form" ile Sağlık Bakanlığı Aylık Çalışma Formu düzeninde Excel indirilir.</div>
     </div>
+
+    <button class="btn danger" id="resetAllBtn" style="width:100%">🗑 Tümünü Sıfırla</button>
   </aside>
 
   <main class="main">
@@ -353,20 +361,45 @@ function renderAreaChecks(preselect){
   document.getElementById('areaChecks').innerHTML=ALL_AREAS.map(a=>
     `<label><input type="checkbox" class="areaChk" value="${a}" ${sel.includes(a)?'checked':''}>${AREAS[a]}</label>`).join('');
 }
+const FQ_AREAS=['sari','kirmizi','travma','yesil','ortaci','yatis','yogun'];
+const FQ_SHIFTS=['24','16','8'];
+function renderFormQuota(q){
+  q=q||{areas:{},shifts:{}};
+  document.getElementById('formQuotaAreas').innerHTML=FQ_AREAS.map(a=>{
+    const v=q.areas&&q.areas[a]!=null?q.areas[a]:'';
+    return `<label style="flex-direction:column;align-items:flex-start;gap:2px">
+      <span class="pill" style="background:var(--${a});color:#0b1220">${AREAS[a]}</span>
+      <input type="number" min="0" class="fqa" data-a="${a}" value="${v}" placeholder="—" style="width:62px">
+    </label>`; }).join('');
+  document.getElementById('formQuotaShifts').innerHTML=FQ_SHIFTS.map(sh=>{
+    const v=q.shifts&&q.shifts[sh]!=null?q.shifts[sh]:'';
+    return `<label style="flex-direction:column;align-items:flex-start;gap:2px">
+      <span>${SHIFTS[sh]}</span>
+      <input type="number" min="0" class="fqs" data-s="${sh}" value="${v}" placeholder="—" style="width:62px">
+    </label>`; }).join('');
+}
+function readFormQuota(){
+  const areas={},shifts={};
+  document.querySelectorAll('.fqa').forEach(i=>{ if(i.value!=='') areas[i.dataset.a]=+i.value; });
+  document.querySelectorAll('.fqs').forEach(i=>{ if(i.value!=='') shifts[i.dataset.s]=+i.value; });
+  return {areas,shifts};
+}
 function addStaff(){
   const name=document.getElementById('sName').value.trim();
   if(!name){ alert('Ad girin'); return; }
   const role=document.getElementById('sRole').value;
   const sen=role==='asistan'?document.getElementById('sSeniority').value:null;
   const areas=[...document.querySelectorAll('.areaChk:checked')].map(c=>c.value);
+  const quota=readFormQuota();
   if(editingId){
     const s=db.staff.find(x=>x.id===editingId);
-    if(s){ s.name=name; s.role=role; s.seniority=sen; s.areas=areas; }
+    if(s){ s.name=name; s.role=role; s.seniority=sen; s.areas=areas; s.quota=quota; }
     endEdit();
   }else{
-    db.staff.push({id:uid(),name,role,seniority:sen,areas,exceptions:{},quota:{areas:{},shifts:{}}});
+    db.staff.push({id:uid(),name,role,seniority:sen,areas,exceptions:{},quota});
   }
   document.getElementById('sName').value='';
+  renderFormQuota();
   save(); renderStaff(); render();
 }
 function editStaff(id){
@@ -376,6 +409,7 @@ function editStaff(id){
   document.getElementById('sRole').value=s.role;
   if(s.role==='asistan') document.getElementById('sSeniority').value=s.seniority||'ust';
   renderAreaChecks(s.areas);
+  renderFormQuota(s.quota);
   document.getElementById('staffFormTitle').textContent='Personeli Düzenle';
   document.getElementById('addStaffLabel').textContent='💾 Kaydet';
   document.getElementById('cancelEditBtn').style.display='';
@@ -390,6 +424,7 @@ function endEdit(){
   document.getElementById('staffFormCard').classList.remove('editing');
   document.getElementById('sName').value='';
   renderAreaChecks();
+  renderFormQuota();
 }
 function roleLabel(s){
   const r={ogretim:'Öğretim üyesi',uzman:'Uzman',asistan:'Asistan',pratisyen:'Pratisyen'}[s.role];
@@ -966,8 +1001,27 @@ document.getElementById('importBtn').onclick=()=>document.getElementById('import
 document.getElementById('importFile').onchange=e=>{ if(e.target.files[0]) importExcel(e.target.files[0]); e.target.value=''; };
 document.querySelectorAll('.modal-bg').forEach(mb=>mb.addEventListener('click',e=>{ if(e.target===mb) mb.classList.remove('show'); }));
 
+/* ============ SIFIRLA ============ */
+function resetAll(){
+  if(!confirm('TÜM veriler silinecek: personel, atamalar, izinler, kişi kotaları, kurum bilgileri ve ayarlar. Bu işlem geri alınamaz. Devam edilsin mi?')) return;
+  localStorage.removeItem('shiftDB');
+  db=load();
+  editingId=null;
+  document.getElementById('staffFormTitle').textContent='Personel Ekle';
+  document.getElementById('addStaffLabel').textContent='+ Ekle';
+  document.getElementById('cancelEditBtn').style.display='none';
+  document.getElementById('staffFormCard').classList.remove('editing');
+  document.getElementById('sName').value='';
+  document.getElementById('sRole').value='asistan';
+  document.getElementById('orgHospital').value='';
+  document.getElementById('orgBirim').value='';
+  renderAreaChecks(); renderFormQuota(); renderStaff(); render();
+  alert('Tüm veriler sıfırlandı.');
+}
+document.getElementById('resetAllBtn').onclick=resetAll;
+
 /* ============ BAŞLAT ============ */
-renderAreaChecks(); renderStaff(); render();
+renderAreaChecks(); renderFormQuota(); renderStaff(); render();
 </script>
 </body>
 </html>
