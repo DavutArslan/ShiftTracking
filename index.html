@@ -928,6 +928,8 @@ function exportCSV(){
 
 /* ============ RESMİ AYLIK ÇALIŞMA FORMU (EXCEL) ============ */
 const WD_ABBR=['PAZ','PZT','SAL','ÇAR','PER','CUM','CMT'];
+const AREA_ARGB={sari:'FFEAB308',kirmizi:'FFEF4444',travma:'FFA855F7',yesil:'FF22C55E',ortaci:'FFF97316',yatis:'FFEC4899',yogun:'FF06B6D4',mesai:'FF94A3B8'};
+function formArea(s,y,m,d){ const dISO=iso(new Date(y,m,d)); const as=dayAssigns(dISO).filter(a=>a.staffId===s.id); return as.length?as[0].area:null; }
 function formCell(s,y,m,d){
   const dISO=iso(new Date(y,m,d));
   const as=dayAssigns(dISO).filter(a=>a.staffId===s.id);
@@ -985,23 +987,41 @@ async function exportOfficialForm(){
     ws.getCell(r,lastDayCol+3).value=izinGun||'';            // İZİNLİ OLDUĞU İŞ GÜNÜ
     ws.getCell(r,lastDayCol+6).value=totalHours;             // TOPLAM ÇALIŞTIĞI SAAT
   });
-  // biçimlendirme: kenarlık + hizalama + hafta sonu/izin renkleri
+  // biçimlendirme: kenarlık + hizalama + ALAN RENKLERİ + izin/hafta sonu
+  const solid=argb=>({type:'pattern',pattern:'solid',fgColor:{argb}});
   const lastRow=11+staff.length;
   for(let r=10;r<=lastRow;r++){
     for(let c=1;c<=lastCol;c++){
       const cell=ws.getCell(r,c); cell.border=border;
-      if(r>=10) cell.alignment=Object.assign({vertical:'middle',wrapText:true},cell.alignment,{horizontal:(c===2&&r>=12)?'left':'center'});
-      if(r<=11){ cell.font={bold:true,size:c>=firstDay&&c<=lastDayCol?9:10}; cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE8EEF5'}}; }
-      // hafta sonu sütun gölgesi (gün sütunları)
-      if(r>=10 && c>=firstDay && c<=lastDayCol){ const dow=new Date(y,m,c-2).getDay();
-        if(dow===0||dow===6) cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:r<=11?'FFDCE3EC':'FFF3F4F6'}}; }
-      // izin kodu renkleri
-      if(r>=12 && c>=firstDay && c<=lastDayCol){ const v=cell.value;
-        if(v==='Yİ') cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFDE68A'}};
-        else if(v==='Nİ') cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFDBEAFE'}}; }
+      cell.alignment=Object.assign({vertical:'middle',wrapText:true},cell.alignment,{horizontal:(c===2&&r>=12)?'left':'center'});
+      const isDay=c>=firstDay&&c<=lastDayCol;
+      const wkend=isDay&&[0,6].includes(new Date(y,m,c-2).getDay());
+      if(r<=11){
+        cell.font={bold:true,size:isDay?9:10};
+        cell.fill=solid(wkend?'FFDCE3EC':'FFE8EEF5');
+      }else if(isDay){
+        const v=cell.value;
+        if(typeof v==='number'){
+          const ar=formArea(staff[r-12],y,m,c-2); const argb=AREA_ARGB[ar];
+          if(argb){ cell.fill=solid(argb); cell.font={bold:true,color:{argb:'FF0B1220'}}; }
+        }else if(v==='Yİ'){ cell.fill=solid('FFFDE68A'); }
+        else if(v==='Nİ'){ cell.fill=solid('FFDBEAFE'); }
+        else if(wkend){ cell.fill=solid('FFF3F4F6'); }
+      }
     }
   }
   ws.getRow(10).height=64; ws.getRow(11).height=16;
+  // RENK AÇIKLAMASI (legend)
+  const legRow=lastRow+2;
+  ws.getCell(legRow,1).value='Renk açıklaması:'; ws.getCell(legRow,1).font={bold:true};
+  ['sari','kirmizi','travma','yesil','ortaci','yatis','yogun','mesai'].forEach((a,i)=>{
+    const cell=ws.getCell(legRow,2+i); cell.value=AREAS[a]; cell.fill=solid(AREA_ARGB[a]);
+    cell.alignment={horizontal:'center'}; cell.border=border; cell.font={bold:true,color:{argb:'FF0B1220'}}; });
+  const legRow2=legRow+1;
+  ws.getCell(legRow2,1).value='İzin kodları:'; ws.getCell(legRow2,1).font={bold:true};
+  const yi=ws.getCell(legRow2,2); yi.value='Yİ = Yıllık/İzin'; yi.fill=solid('FFFDE68A'); yi.border=border; yi.alignment={horizontal:'center'};
+  const ni=ws.getCell(legRow2,4); ni.value='Nİ = Nöbet izni'; ni.fill=solid('FFDBEAFE'); ni.border=border; ni.alignment={horizontal:'center'};
+  ws.mergeCells(legRow2,2,legRow2,3); ws.mergeCells(legRow2,4,legRow2,5);
   const buf=await wb.xlsx.writeBuffer();
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
