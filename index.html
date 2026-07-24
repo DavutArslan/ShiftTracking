@@ -115,6 +115,11 @@
   .side-head{display:flex;justify-content:space-between;align-items:center;margin:16px 4px 8px;
     font-size:13px;font-weight:600;color:var(--accent)}
   .stafflist{display:flex;flex-direction:column;gap:6px}
+  .reqarea{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;background:var(--panel2)}
+  .reqarea-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .reqrow{display:grid;grid-template-columns:70px 90px 90px 1fr 34px;gap:6px;align-items:center;margin-bottom:5px}
+  .reqrow-head{font-size:11px;color:var(--muted);margin-bottom:2px}
+  .reqrow input,.reqrow select{padding:5px}
 </style>
 </head>
 <body>
@@ -232,8 +237,8 @@
   <div class="modal">
     <h3>⚙ Ayarlar</h3>
     <h4 style="margin:12px 0 4px;font-size:13px;color:var(--accent)">Günlük İhtiyaç</h4>
-    <div class="hint">Her alan için her gün kaç kişi, hangi vardiya ve <b>aynı kıdemden en fazla kaç kişi</b> (denge) olacağını gir. Boş = sınırsız. Ortacı gün içinde tek kişidir, travma her gün zorunludur, yatış takibini pratisyenler yapar.</div>
-    <table class="gtable" id="reqTable"></table>
+    <div class="hint">Her alana <b>birden çok vardiya</b> ekleyebilirsin (örn. Travma 24s + 16s; Sarı bir kısmı 16s). Her satır: vardiya, hafta içi kişi, hafta sonu kişi ve "Kim" (rol kısıtı, örn. yatış için Sadece Pratisyen). "Aynı kıdemden max" alan bazlı dengeyi sağlar. Değişiklikler anında kaydedilir.</div>
+    <div id="reqTable"></div>
     <div class="row" style="margin-top:12px;align-items:end">
       <div><label>Yoğun bakım — aylık toplam görev</label><input type="number" id="yogunMonthly" min="0" value="6"></div>
       <div style="flex:2"></div>
@@ -338,9 +343,20 @@ const GROUPS=[
   {id:'asistan_alt',label:'Asistan · Alt'},
   {id:'pratisyen',label:'Pratisyen'}
 ];
+// İhtiyaç modeli v2: her alan için VARDİYA SATIRLARI listesi.
+// slot = {shift:'24'|'16'|'8', wd:hafta içi kişi, we:hafta sonu kişi, role:''|'ogretim'|'uzman'|'asistan'|'pratisyen'}
 function defaultReqs(){
-  const base=()=>({ortaci:{count:1,shift:'24'},travma:{count:1,shift:'16'},yatis:{count:2,shift:'24'},kirmizi:{count:1,shift:'24'},sari:{count:4,shift:'24'},yesil:{count:1,shift:'24'}});
-  return {weekday:base(),weekend:base(),maxSameSen:{sari:2},yogunMonthly:6};
+  return {
+    slots:{
+      ortaci:[{shift:'24',wd:1,we:1,role:''}],
+      travma:[{shift:'24',wd:1,we:1,role:''},{shift:'16',wd:1,we:1,role:''}],
+      yatis:[{shift:'16',wd:2,we:2,role:'pratisyen'}],
+      kirmizi:[{shift:'24',wd:1,we:1,role:''}],
+      sari:[{shift:'24',wd:2,we:2,role:''},{shift:'16',wd:2,we:2,role:''}],
+      yesil:[{shift:'24',wd:1,we:1,role:''}]
+    },
+    maxSameSen:{sari:2}, yogunMonthly:6
+  };
 }
 
 /* ============ VERİ ============ */
@@ -349,8 +365,20 @@ function load(){
   let d; try{ d=JSON.parse(localStorage.getItem('shiftDB')); }catch(e){}
   if(!d) d={staff:[],assign:{},izin:{}};
   if(!d.reqs) d.reqs=defaultReqs();
+  // eski model (weekday/weekend {count,shift}) → slots'a dönüştür
+  if(!d.reqs.slots){
+    d.reqs.slots={};
+    REQ_AREAS.forEach(a=>{
+      const wdE=(d.reqs.weekday&&d.reqs.weekday[a])||{count:0,shift:'24'};
+      const weE=(d.reqs.weekend&&d.reqs.weekend[a])||{count:0,shift:'24'};
+      d.reqs.slots[a]=[{shift:wdE.shift||'24',wd:wdE.count||0,we:weE.count||0,role:''}];
+    });
+    delete d.reqs.weekday; delete d.reqs.weekend;
+  }
+  // slot'larda role alanı yoksa ekle
+  REQ_AREAS.forEach(a=>{ (d.reqs.slots[a]||[]).forEach(sl=>{ if(sl.role===undefined) sl.role=''; }); });
   if(!d.reqs.maxSameSen) d.reqs.maxSameSen={sari:2};
-  ['weekday','weekend'].forEach(k=>{ if(!d.reqs[k].yatis) d.reqs[k].yatis={count:2,shift:'24'}; });
+  if(d.reqs.yogunMonthly==null) d.reqs.yogunMonthly=6;
   if(!d.org) d.org={hospital:'',birim:''};
   d.staff.forEach(s=>{ if(!s.exceptions) s.exceptions={}; if(!s.quota) s.quota={areas:{},shifts:{}}; });
   return d;
@@ -549,16 +577,18 @@ function importExcel(file){
   rdr.readAsArrayBuffer(file);
 }
 function downloadTemplate(){
-  // Kota sütunları boş = serbest. Alan kotaları = kişinin aylık o alandaki nöbet sayısı; saat kotaları = aylık o saat türünden kaç kez.
-  const rows=[
-    ['Ad Soyad','Rol','Kıdem','Alanlar (virgülle, boş=otomatik)','Kota Sarı','Kota Kırmızı','Kota Travma','Kota Yeşil','Kota Ortacı','Kota Yatış','Kota Yoğun','Kota 24s','Kota 16s','Kota 8s'],
-    ['Dr. Ahmet Yılmaz','Asistan','Üst','Sarı, Kırmızı, Travma, Ortacı',4,2,2,'',3,'','','','',''],
-    ['Dr. Ayşe Demir','Asistan','Orta','Sarı, Kırmızı, Travma, Ortacı',4,1,2,'',2,'','','',1,''],
-    ['Dr. Mehmet Kaya','Asistan','Alt','Sarı, Travma, Yeşil, Yoğun bakım',5,'',2,3,'','',2,'','',''],
-    ['Dr. Zeynep Ak','Pratisyen','','Yeşil, Sarı, Yatış takibi',3,'','',4,'',6,'','','',''],
-    ['Dr. Ali Vural','Uzman','','Sarı, Kırmızı, Travma, Yeşil','','','',3,'','','','','',''],
-    ['Prof. Dr. Can Öz','Öğretim üyesi','','Sarı, Kırmızı, Travma','','','','','','','','','','']
-  ];
+  // Gerçekçi bir kadro; kota sütunları boş = serbest (istersen doldurursun).
+  const rows=[['Ad Soyad','Rol','Kıdem','Alanlar (virgülle, boş=otomatik)','Kota Sarı','Kota Kırmızı','Kota Travma','Kota Yeşil','Kota Ortacı','Kota Yatış','Kota Yoğun','Kota 24s','Kota 16s','Kota 8s']];
+  const AD=['Ahmet','Ayşe','Mehmet','Zeynep','Ali','Elif','Mustafa','Fatma','Emre','Merve','Burak','Selin','Kaan','Deniz','Ozan','Ece','Cem','Nur','Hakan','Buse','Onur','Sıla','Tolga','Derya','Barış','Gizem','Kerem'];
+  const SOY=['Yılmaz','Demir','Kaya','Ak','Vural','Şahin','Çelik','Arslan','Doğan','Kılıç','Aydın','Öztürk','Koç','Yıldız','Aslan','Taş','Bulut','Erdoğan','Kurt','Güneş','Polat','Bayram','Aksoy','Çetin','Turan','Şimşek','Korkmaz'];
+  let n=0; const nm=()=>`Dr. ${AD[n%AD.length]} ${SOY[(n*3+7)%SOY.length]}`;
+  const add=(cnt,rol,kid,alan)=>{ for(let i=0;i<cnt;i++){ rows.push([nm(),rol,kid,alan,'','','','','','','','','','']); n++; } };
+  add(4,'Asistan','Üst','Sarı, Kırmızı, Travma, Ortacı');
+  add(5,'Asistan','Orta','Sarı, Kırmızı, Travma, Ortacı');
+  add(8,'Asistan','Alt','Sarı, Travma, Yeşil, Yoğun bakım');
+  add(6,'Pratisyen','','Yeşil, Sarı, Yatış takibi');
+  add(3,'Uzman','','Sarı, Kırmızı, Travma, Yeşil');
+  add(1,'Öğretim üyesi','','Sarı, Kırmızı, Travma');
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:22},{wch:16},{wch:10},{wch:38}].concat(Array(10).fill({wch:9}));
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Personel');
@@ -591,34 +621,47 @@ document.getElementById('excPrev').onclick=()=>{ excCur.setMonth(excCur.getMonth
 document.getElementById('excNext').onclick=()=>{ excCur.setMonth(excCur.getMonth()+1); renderExcMini(); };
 document.getElementById('excClose').onclick=()=>{ document.getElementById('excBg').classList.remove('show'); renderStaff(); };
 
-/* ============ İHTİYAÇ PANELİ ============ */
-function openReq(){
-  let html='<tr><th>Alan</th><th>Hafta içi</th><th>Hafta sonu</th><th>Vardiya</th><th>Aynı kıdemden max</th></tr>';
-  REQ_AREAS.forEach(a=>{
-    const wd=db.reqs.weekday[a]||{count:0,shift:'24'}, we=db.reqs.weekend[a]||{count:0,shift:'24'};
+/* ============ İHTİYAÇ PANELİ (vardiya satırları) ============ */
+const REQ_ROLE_OPTS=[['','Herkes'],['pratisyen','Sadece Pratisyen'],['asistan','Sadece Asistan'],['uzman','Sadece Uzman'],['ogretim','Sadece Öğr. üyesi']];
+function renderReq(){
+  const el=document.getElementById('reqTable');
+  el.innerHTML=REQ_AREAS.map(a=>{
+    const slots=db.reqs.slots[a]||[];
     const cap=db.reqs.maxSameSen[a]!=null?db.reqs.maxSameSen[a]:'';
-    html+=`<tr>
-      <td style="text-align:left"><span class="pill" style="background:var(--${a});color:#0b1220">${AREAS[a]}</span></td>
-      <td><input type="number" min="0" id="wd_${a}" value="${wd.count}"></td>
-      <td><input type="number" min="0" id="we_${a}" value="${we.count}"></td>
-      <td><select id="sh_${a}"><option value="24"${wd.shift==='24'?' selected':''}>24s</option><option value="16"${wd.shift==='16'?' selected':''}>16s</option><option value="8"${wd.shift==='8'?' selected':''}>8s</option></select></td>
-      <td><input type="number" min="1" class="narrow" id="cap_${a}" value="${cap}" placeholder="—"></td>
-    </tr>`;
-  });
-  document.getElementById('reqTable').innerHTML=html;
+    const rows=slots.map((sl,i)=>{
+      const shOpt=['24','16','8'].map(x=>`<option value="${x}"${sl.shift===x?' selected':''}>${x}s</option>`).join('');
+      const roleOpt=REQ_ROLE_OPTS.map(([v,l])=>`<option value="${v}"${sl.role===v?' selected':''}>${l}</option>`).join('');
+      return `<div class="reqrow">
+        <select onchange="setSlot('${a}',${i},'shift',this.value)">${shOpt}</select>
+        <input type="number" min="0" value="${sl.wd}" title="Hafta içi kişi" onchange="setSlot('${a}',${i},'wd',this.value)">
+        <input type="number" min="0" value="${sl.we}" title="Hafta sonu kişi" onchange="setSlot('${a}',${i},'we',this.value)">
+        <select onchange="setSlot('${a}',${i},'role',this.value)">${roleOpt}</select>
+        <button class="btn danger sm" title="Sil" onclick="delSlot('${a}',${i})">✕</button>
+      </div>`;
+    }).join('');
+    return `<div class="reqarea">
+      <div class="reqarea-head">
+        <span class="pill" style="background:var(--${a});color:#0b1220">${AREAS[a]}</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px;color:var(--muted)">Aynı kıdemden max</span>
+        <input type="number" min="1" class="narrow" value="${cap}" placeholder="—" onchange="setCap('${a}',this.value)">
+      </div>
+      <div class="reqrow reqrow-head"><span>Vardiya</span><span>Hafta içi</span><span>Hafta sonu</span><span>Kim</span><span></span></div>
+      ${rows||'<div class="hint" style="margin:2px 0">Vardiya yok</div>'}
+      <button class="btn ghost sm" style="margin-top:4px" onclick="addSlot('${a}')">+ vardiya ekle</button>
+    </div>`;
+  }).join('');
+}
+function setSlot(a,i,k,v){ const sl=db.reqs.slots[a][i]; sl[k]=(k==='shift'||k==='role')?v:(+v||0); save(); }
+function setCap(a,v){ if(v==='') delete db.reqs.maxSameSen[a]; else db.reqs.maxSameSen[a]=+v; save(); }
+function addSlot(a){ (db.reqs.slots[a]=db.reqs.slots[a]||[]).push({shift:'24',wd:1,we:1,role:''}); save(); renderReq(); }
+function delSlot(a,i){ db.reqs.slots[a].splice(i,1); save(); renderReq(); }
+function openReq(){
+  renderReq();
   document.getElementById('yogunMonthly').value=db.reqs.yogunMonthly||0;
   document.getElementById('reqBg').classList.add('show');
 }
 function saveReq(){
-  REQ_AREAS.forEach(a=>{
-    const c1=+document.getElementById('wd_'+a).value||0;
-    const c2=+document.getElementById('we_'+a).value||0;
-    const sh=document.getElementById('sh_'+a).value;
-    db.reqs.weekday[a]={count:c1,shift:sh};
-    db.reqs.weekend[a]={count:c2,shift:sh};
-    const capV=document.getElementById('cap_'+a).value;
-    if(capV==='') delete db.reqs.maxSameSen[a]; else db.reqs.maxSameSen[a]=+capV;
-  });
   db.reqs.yogunMonthly=+document.getElementById('yogunMonthly').value||0;
   save(); document.getElementById('reqBg').classList.remove('show');
 }
@@ -704,6 +747,13 @@ function dayWarnings(dISO){
   if(db.staff.length && !list.some(a=>a.area==='travma')) w.push('Travma ataması yok (zorunlu)');
   list.forEach(a=>{ const s=staffById(a.staffId);
     if(s&&!s.areas.includes(a.area)) w.push(`${s.name}: ${AREAS[a.area]} yetkisi yok`); });
+  // ihtiyaçtan fazla atama (over-count) kontrolü
+  const wkend=isWeekend(d);
+  REQ_AREAS.forEach(ar=>{
+    const need=(db.reqs.slots[ar]||[]).reduce((t,sl)=>t+(wkend?sl.we:sl.wd),0);
+    const act=list.filter(a=>a.area===ar).length;
+    if(need>0 && act>need) w.push(`${AREAS[ar]}: ihtiyaçtan fazla (${act}/${need})`);
+  });
   // kıdem dengesi
   for(const ar in db.reqs.maxSameSen){ const cap=db.reqs.maxSameSen[ar]; if(!cap)continue;
     const cnt={}; list.filter(a=>a.area===ar).forEach(a=>{ const s=staffById(a.staffId); if(!s)return; const k=senKey(s); cnt[k]=(cnt[k]||0)+1; });
@@ -731,8 +781,9 @@ function autoGenerate(){
     if(a.area==='yogun')yog[id]++; aCnt[id][a.area]=(aCnt[id][a.area]||0)+1; shCnt[id][a.shift]=(shCnt[id][a.shift]||0)+1; }
   for(let dn=1;dn<=daysIn;dn++){ const d=new Date(y,m,dn); (db.assign[iso(d)]||[]).forEach(a=>bump(a,d)); }
   const gaps=[], overQuota={}, balanceFail={};
-  function canAssign(s,d,dISO,area,shift){
-    if(!s.areas.includes(area)) return false; // yetki = kişiye tanımlı alanlar (rol kısıtı yok)
+  function canAssign(s,d,dISO,area,shift,roleReq){
+    if(!s.areas.includes(area)) return false; // yetki = kişiye tanımlı alanlar
+    if(roleReq && s.role!==roleReq) return false; // slot'a rol kısıtı (örn. sadece pratisyen)
     if(s.exceptions&&s.exceptions[dISO]==='hard') return false;
     if(isIzin(s.id,dISO)) return false;
     if((db.assign[dISO]||[]).some(a=>a.staffId===s.id)) return false;
@@ -777,18 +828,22 @@ function autoGenerate(){
       pool.sort((a,b)=>(yog[a.id]-yog[b.id])||(score(a,dISO,'24','yogun')-score(b,dISO,'24','yogun')));
       pick([pool[0]],d,dISO,'24','yogun');
     } }
-  // 2) Günlük alanlar
+  // 2) Günlük alanlar — her alanın vardiya satırları (slot) ayrı doldurulur
+  const ROLE_LBL={'':'',ogretim:'Öğr.üyesi',uzman:'Uzman',asistan:'Asistan',pratisyen:'Pratisyen'};
   for(let dn=1;dn<=daysIn;dn++){
     const d=new Date(y,m,dn),dISO=iso(d),wk=isWeekend(d);
-    const reqs=wk?db.reqs.weekend:db.reqs.weekday;
     for(const area of REQ_AREAS){
-      const r=reqs[area]; if(!r||r.count<=0) continue;
-      let need=r.count-(db.assign[dISO]||[]).filter(a=>a.area===area).length;
-      while(need>0){
-        let pool=db.staff.filter(s=>canAssign(s,d,dISO,area,r.shift));
-        if(!pool.length){ gaps.push(`${dISO} · ${AREAS[area]}: uygun kişi yok (${need} eksik)`); break; }
-        pool=balancePool(pool,dISO,area);
-        pick(pool,d,dISO,r.shift,area); need--;
+      const slots=db.reqs.slots[area]||[];
+      for(const sl of slots){
+        const want=wk?sl.we:sl.wd; if(!want||want<=0) continue;
+        let have=(db.assign[dISO]||[]).filter(a=>a.area===area&&a.shift===sl.shift).length;
+        let need=want-have;
+        while(need>0){
+          let pool=db.staff.filter(s=>canAssign(s,d,dISO,area,sl.shift,sl.role));
+          if(!pool.length){ gaps.push(`${dISO} · ${AREAS[area]} ${sl.shift}s${sl.role?' ('+ROLE_LBL[sl.role]+')':''}: uygun kişi yok (${need} eksik)`); break; }
+          pool=balancePool(pool,dISO,area);
+          pick(pool,d,dISO,sl.shift,area); need--;
+        }
       }
     }
   }
